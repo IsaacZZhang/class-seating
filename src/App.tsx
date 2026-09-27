@@ -330,7 +330,7 @@ function SeatBoard({
         const from = points[i];
         if (point.seatId === from.seatId) return [];
         const dy = point.y - from.y;
-        if (Math.abs(dy) < (from.height + point.height) / 2 + 10) {
+        if (Math.abs(dy) < Math.min(from.height, point.height) * 0.55) {
           const startY = from.y - from.height / 2 - 6;
           const endY = point.y - point.height / 2 - 6;
           const laneY = Math.min(startY, endY) - 17 - (i % 3) * 6;
@@ -346,9 +346,10 @@ function SeatBoard({
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(root);
+    root.querySelectorAll<HTMLElement>("[data-seat-id]").forEach((node) => observer.observe(node));
     window.addEventListener("resize", measure);
     return () => { observer.disconnect(); window.removeEventListener("resize", measure); };
-  }, [trajectoryKey, c.layout]);
+  }, [trajectoryKey, c.layout, zoom]);
   const seatMap = new Map(seatsOf(c).map((s) => [s.id, s]));
   const issues = publicMode || layoutMode || focused ? [] : inspect(c, assignments);
   const issuesByStudent = new Map<string, Issue[]>();

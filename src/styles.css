@@ -2509,9 +2509,12 @@ a {
 .sidebar { position: sticky; top: 0; height: 100vh; z-index: 21; }
 .topbar { position: sticky; top: 0; z-index: 20; }
 @media (min-width: 1001px) {
-  .workspace-classroom .workspace-grid { height: min(620px, calc(100dvh - 236px)); min-height: 0; }
+  .workspace-classroom .workspace-grid { height: min(710px, calc(100dvh - 250px)); min-height: 0; }
   .workspace-classroom .insights { position: sticky; top: 82px; align-self: start; max-height: calc(100dvh - 96px); }
-  .workspace-classroom .classroom { min-height: 0; max-width: 100%; aspect-ratio: auto; height: 100%; flex: 1 1 auto; }
+  .workspace-classroom .classroom {
+    width: min(100%, clamp(500px, calc(120dvh - 432px), 720px));
+    max-width: 100%; height: auto; min-height: 0; aspect-ratio: 1.2; flex: 0 0 auto;
+  }
 }
 @media (max-width: 1000px) {
   .sidebar { position: sticky; }
