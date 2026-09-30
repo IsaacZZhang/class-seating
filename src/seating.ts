@@ -18,24 +18,37 @@ export function rowPattern(layout: Layout, row: number): number[] {
 }
 export function seatsOf(c: ClassData): Seat[] {
   const seats: Seat[] = [];
-  for (let row = 0; row < c.layout.rows; row++)
-    for (let desk = 0; desk < rowPattern(c.layout, row).length; desk++)
-      for (let side = 0; side < rowPattern(c.layout, row)[desk]; side++) {
+  for (let row = 0; row < c.layout.rows; row++) {
+    const pattern = rowPattern(c.layout, row);
+    let col = 0;
+    for (let desk = 0; desk < pattern.length; desk++) {
+      const capacity = pattern[desk];
+      for (let side = 0; side < capacity; side++) {
         const seat = {
           id: `r${row}-d${desk}-s${side}`,
           row,
           desk,
           side,
-          col: desk * 2 + side,
-          capacity: rowPattern(c.layout, row)[desk],
+          col,
+          capacity,
         };
+        col += 1;
         if (!c.layout.disabled.includes(seat.id)) seats.push(seat);
       }
+    }
+  }
   return seats;
+}
+export function sideText(capacity: number | undefined, side: number) {
+  const seats = capacity ?? 2;
+  if (seats <= 1) return "单人座";
+  if (seats === 3) return ["左座", "中座", "右座"][side] ?? "座位";
+  if (seats === 2) return side === 0 ? "左座" : "右座";
+  return `${side + 1}座`;
 }
 export const seatLabel = (seat?: Seat) =>
   seat
-    ? `第 ${seat.row + 1} 排 · 第 ${seat.desk + 1} 组${seat.capacity === 1 ? "单人座" : `${seat.side ? "右" : "左"}座`}`
+    ? `第 ${seat.row + 1} 排 · 第 ${seat.desk + 1} 组${sideText(seat.capacity, seat.side)}`
     : "未安排";
 export const studentName = (c: ClassData, studentId?: string) =>
   !studentId
@@ -209,12 +222,21 @@ export function changedCount(before: Assignment, after: Assignment) {
     (s) => studentSeat(before, s) !== studentSeat(after, s),
   ).length;
 }
-export function partnerOf(c: ClassData, a: Assignment, studentId: string) {
+export function deskMates(c: ClassData, a: Assignment, studentId: string) {
   const seatId = studentSeat(a, studentId);
-  if (!seatId) return undefined;
+  if (!seatId) return [];
   const seat = seatsOf(c).find((s) => s.id === seatId);
-  if (!seat) return undefined;
-  return a[`r${seat.row}-d${seat.desk}-s${seat.side ? 0 : 1}`];
+  if (!seat || (seat.capacity ?? 2) < 2) return [];
+  const mates: string[] = [];
+  for (let side = 0; side < (seat.capacity ?? 2); side++) {
+    if (side === seat.side) continue;
+    const mate = a[`r${seat.row}-d${seat.desk}-s${side}`];
+    if (mate) mates.push(mate);
+  }
+  return mates;
+}
+export function partnerOf(c: ClassData, a: Assignment, studentId: string) {
+  return deskMates(c, a, studentId)[0];
 }
 export function explain(
   c: ClassData,
@@ -355,8 +377,8 @@ function createScorer(c: ClassData, base: Assignment, genderPreference: GenderPr
       .filter((s): s is Seat => !!s);
     const partners = new Map<string, number>();
     for (const version of c.versions.slice(-4)) {
-      const partner = partnerOf(c, version.assignments, student.id);
-      if (partner) partners.set(partner, (partners.get(partner) ?? 0) + 1);
+      for (const partner of deskMates(c, version.assignments, student.id))
+        partners.set(partner, (partners.get(partner) ?? 0) + 1);
     }
     history.set(student.id, {
       avgRow: places.length
@@ -402,8 +424,13 @@ function createScorer(c: ClassData, base: Assignment, genderPreference: GenderPr
           (goal === "rotate" ? 2 : 0.6);
         if (h.lastRear && seat.row >= c.layout.rows - 2) value += 18;
       }
-      const partner = a[`r${seat.row}-d${seat.desk}-s${seat.side ? 0 : 1}`];
-      if (partner) {
+      const mates: string[] = [];
+      for (let side = 0; side < (seat.capacity ?? 2); side++) {
+        if (side === seat.side) continue;
+        const mate = a[`r${seat.row}-d${seat.desk}-s${side}`];
+        if (mate) mates.push(mate);
+      }
+      for (const partner of mates) {
         value +=
           (h.partners.get(partner) ?? 0) *
           (goal === "partner"

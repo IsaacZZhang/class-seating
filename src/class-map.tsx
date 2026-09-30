@@ -1,4 +1,5 @@
-import type { CSSProperties } from "react";
+import { useRef, type CSSProperties } from "react";
+import { GroupRings } from "./group-ring";
 import boyAvatar from "../ui/png/男生无眼镜.png";
 import boyGlassesAvatar from "../ui/png/男生戴眼镜.png";
 import girlAvatar from "../ui/png/女生无眼镜.png";
@@ -39,6 +40,7 @@ export function ClassMap({
   markedSeats?: string[];
   readOnly?: boolean;
 }) {
+  const rowsRef = useRef<HTMLDivElement>(null);
   const seatMap = new Map(seatsOf(klass).map((seat) => [seat.id, seat]));
   const studentById = new Map(klass.students.map((student) => [student.id, student]));
   return (
@@ -59,30 +61,28 @@ export function ClassMap({
         </div>
         <span className="door-label">门 · {klass.layout.doorSide === "right" ? "右" : "左"}</span>
       </div>
-      <div className="rows">
+      <div className="rows" ref={rowsRef}>
+        <GroupRings rootRef={rowsRef} c={klass} assignments={assignments} />
         {Array.from({ length: klass.layout.rows }, (_, row) => (
           <div className="seat-row" key={row}>
             <div className="row-label">第 {row + 1} 排</div>
-            <div className="desks" style={{ gridTemplateColumns: `repeat(${Math.max(1, rowPattern(klass.layout, row).length)},minmax(0,1fr))` }}>
+            <div className="desks" style={{ gridTemplateColumns: rowPattern(klass.layout, row).map((capacity) => `minmax(0,${capacity}fr)`).join(" ") }}>
               {rowPattern(klass.layout, row).map((capacity, desk) => (
-                <div className="desk" key={desk} style={{ gridColumn: desk + 1 }}>
+                <div className="desk" key={desk} style={{ gridColumn: desk + 1, "--desk-seats": capacity } as CSSProperties}>
                   {Array.from({ length: capacity }, (_, side) => {
                     const seatId = `r${row}-d${desk}-s${side}`;
                     if (!seatMap.has(seatId)) return <span key={seatId} className="seat-hidden" />;
                     const student = studentById.get(assignments[seatId] ?? "");
-                    const group = student?.groupId
-                      ? (klass.groups ?? []).find((item) => item.id === student.groupId)
-                      : (klass.groups ?? []).find((item) => item.zone.includes(seatId));
                     const avatar = student ? avatarFor(student) : "";
                     return (
                       <button
                         type="button"
                         key={seatId}
+                        data-seat-id={seatId}
                         className={`seat ${student ? "" : "empty"} ${markedSeats.includes(seatId) ? "zone-mark" : ""}`}
                         disabled={readOnly}
                         onClick={() => onSeat?.(seatId)}
                       >
-                        {group && <span className="group-stripe" style={{ background: group.color }} />}
                         {avatar && (
                           <span className="avatar student-avatar">
                             <img src={avatar} alt="" />

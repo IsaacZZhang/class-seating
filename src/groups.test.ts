@@ -7,6 +7,7 @@ import {
   groupsByPriority,
   moveFormation,
   nextTurn,
+  groupClusters,
   seatsAreTogether,
   zoneError,
 } from "./groups";
@@ -71,5 +72,17 @@ describe("分组选座", () => {
       expect(moved.assignments["r0-d1-s0"]).toBe("c");
     }
     expect(moveFormation(c, ["a", "b"], "a", "r0-d1-s0").ok).toBe(false);
+  });
+
+  it("相连的同组同学合成一圈，分开坐的拆成两圈", () => {
+    const c = room();
+    c.assignments = { "r0-d0-s0": "a", "r0-d0-s1": "b", "r1-d1-s0": "c", "r1-d1-s1": "d" };
+    c.students = c.students.map((student) => ({ ...student, groupId: "g1" }));
+    const clusters = groupClusters(seatsOf(c), c.assignments, c.students);
+    expect(clusters).toHaveLength(2);
+    expect(clusters.map((cluster) => cluster.seatIds.slice().sort())).toEqual([
+      ["r0-d0-s0", "r0-d0-s1"],
+      ["r1-d1-s0", "r1-d1-s1"],
+    ]);
   });
 });

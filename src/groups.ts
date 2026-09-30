@@ -42,6 +42,58 @@ function touches(a: Seat, b: Seat) {
   return a.desk === b.desk && Math.abs(a.row - b.row) === 1;
 }
 
+export type GroupCluster = {
+  groupId: string;
+  seatIds: string[];
+  studentIds: string[];
+};
+
+export function groupClusters(
+  seats: Seat[],
+  assignments: Assignment,
+  students: Student[],
+): GroupCluster[] {
+  const seatById = new Map(seats.map((seat) => [seat.id, seat]));
+  const studentById = new Map(students.map((student) => [student.id, student]));
+  const byGroup = new Map<string, string[]>();
+  for (const [seatId, studentId] of Object.entries(assignments)) {
+    const student = studentById.get(studentId);
+    if (!student?.groupId || !seatById.has(seatId)) continue;
+    const list = byGroup.get(student.groupId) ?? [];
+    list.push(seatId);
+    byGroup.set(student.groupId, list);
+  }
+  const clusters: GroupCluster[] = [];
+  for (const [groupId, seatIds] of byGroup) {
+    const unseen = new Set(seatIds);
+    while (unseen.size) {
+      const start = unseen.values().next().value as string;
+      const queue = [start];
+      unseen.delete(start);
+      const cluster: string[] = [];
+      while (queue.length) {
+        const currentId = queue.shift()!;
+        cluster.push(currentId);
+        const current = seatById.get(currentId)!;
+        for (const otherId of [...unseen]) {
+          const other = seatById.get(otherId)!;
+          if (!touches(current, other)) continue;
+          unseen.delete(otherId);
+          queue.push(otherId);
+        }
+      }
+      clusters.push({
+        groupId,
+        seatIds: cluster,
+        studentIds: cluster
+          .map((seatId) => assignments[seatId])
+          .filter((studentId): studentId is string => !!studentId),
+      });
+    }
+  }
+  return clusters;
+}
+
 export function seatsAreTogether(seats: Seat[], seatIds: string[]) {
   const picked = seatIds
     .map((seatId) => seats.find((seat) => seat.id === seatId))

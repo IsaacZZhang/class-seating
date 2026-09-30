@@ -12,6 +12,7 @@ import {
   makeEmptyClass,
   moveStudentToSeat,
   parseNames,
+  seatLabel,
   seatsOf,
   studentSeat,
 } from "./seating";
@@ -149,6 +150,19 @@ describe("排座决策", () => {
     expect(c.layout.rows).toBe(5);
     expect(migrated.publishedLayout?.rows).toBe(6);
     expect(migrated.publishedStudents).toHaveLength(36);
+  });
+  it("三人桌生成左中右三个座位", () => {
+    const c = makeEmptyClass("三人桌");
+    c.layout.rows = 1;
+    c.layout.desks = 1;
+    c.layout.rowPatterns = [[3, 1]];
+    const seats = seatsOf(c);
+    expect(seats.map((seat) => seat.id)).toEqual(["r0-d0-s0", "r0-d0-s1", "r0-d0-s2", "r0-d1-s0"]);
+    expect(seats.map((seat) => seat.col)).toEqual([0, 1, 2, 3]);
+    expect(seatLabel(seats[0])).toBe("第 1 排 · 第 1 组左座");
+    expect(seatLabel(seats[1])).toBe("第 1 排 · 第 1 组中座");
+    expect(seatLabel(seats[2])).toBe("第 1 排 · 第 1 组右座");
+    expect(seatLabel(seats[3])).toBe("第 1 排 · 第 2 组单人座");
   });
   it("逐排混合单人和双人桌时，只生成真实存在的座位", () => {
     const c = makeEmptyClass("混合教室");
