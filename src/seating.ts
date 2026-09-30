@@ -755,6 +755,8 @@ export function makeEmptyClass(name: string): ClassData {
     ignoredRuleIds: [],
     versions: [],
     round: 1,
+    groups: [],
+    seatingMode: "individual",
   };
 }
 export function parseGender(value: string): Gender | undefined {

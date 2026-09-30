@@ -17,6 +17,14 @@ export type Student = {
   note?: string;
   gender?: Gender;
   glasses?: boolean;
+  groupId?: string;
+  points?: number;
+};
+export type StudyGroup = {
+  id: string;
+  name: string;
+  color: string;
+  zone: string[];
 };
 export type Rule = {
   id: string;
@@ -70,6 +78,9 @@ export type ClassData = {
   publishedLayout?: Layout;
   publishedStudents?: Student[];
   publishedAt?: string;
+  groups?: StudyGroup[];
+  seatingMode?: "individual" | "group";
+  displayToken?: string;
   pending?: {
     assignments: Assignment;
     layout?: Layout;

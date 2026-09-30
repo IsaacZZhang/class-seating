@@ -79,7 +79,11 @@ import {
   Version,
   id,
 } from "./model";
-import { hasStoredProject, loadProject, migrateProject, saveProject } from "./storage";
+import { migrateProject } from "./storage";
+import { addPoints, changePin, pinStatus, pullProject, pushProject, setPin, supabase, verifyPin } from "./cloud";
+import { freshGroup, moveFormation } from "./groups";
+import { AccountMenu } from "./account";
+import { PinDialog } from "./meeting";
 import boyAvatar from "../ui/png/男生无眼镜.png";
 import boyGlassesAvatar from "../ui/png/男生戴眼镜.png";
 import girlAvatar from "../ui/png/女生无眼镜.png";
@@ -97,7 +101,7 @@ type Panel =
   | "adjust"
   | "backup";
 type GenerateStep = "goal" | "review" | "results";
-type View = "classroom" | "roster" | "layout" | "trajectory" | "history";
+type View = "classroom" | "roster" | "layout" | "trajectory" | "history" | "groups";
 type OnboardingStep = "welcome" | "class" | "students" | "layout";
 type TrajectoryPoint = { seatId: string; round: number; at: string };
 type ComparisonSnapshot = { label: string; c: ClassData; assignments: Assignment; meta?: string };
@@ -267,6 +271,11 @@ function SeatBoard({
   focusStudentId,
   doneRows = [],
   motion,
+  markedSeats = [],
+  frozen = false,
+  dragCohort = [],
+  showScore = false,
+  markEmpty = true,
 }: {
   c: ClassData;
   assignments: Assignment;
@@ -286,6 +295,11 @@ function SeatBoard({
   focusStudentId?: string;
   doneRows?: number[];
   motion?: SeatMotion;
+  markedSeats?: string[];
+  frozen?: boolean;
+  dragCohort?: string[];
+  showScore?: boolean;
+  markEmpty?: boolean;
 }) {
   const rowsRef = useRef<HTMLDivElement>(null);
   const focused = focusStudentId !== undefined;
@@ -360,7 +374,7 @@ function SeatBoard({
   );
   return (
     <div
-      className={`classroom ${publicMode ? "classroom-public" : ""} ${readOnly ? "classroom-readonly" : ""} ${layoutMode ? "classroom-layout" : ""} ${focused ? "classroom-focus" : ""}`}
+      className={`classroom ${publicMode ? "classroom-public" : ""} ${readOnly ? "classroom-readonly" : ""} ${frozen ? "stage-locked" : ""} ${layoutMode ? "classroom-layout" : ""} ${focused ? "classroom-focus" : ""}`}
       style={{ "--seat-zoom": zoom, "--row-count": c.layout.rows, "--row-seat-ratio": 1.04 / c.layout.rows } as React.CSSProperties}
     >
       <div className="classroom-front">
@@ -399,6 +413,9 @@ function SeatBoard({
                     const stops = trajectory.map((point, index) => ({ ...point, index: index + 1 })).filter((point) => point.seatId === seatId);
                     const studentId = layoutMode ? undefined : focused ? (stops.length ? focusStudentId : undefined) : assignments[seatId];
                     const student = c.students.find((s) => s.id === studentId);
+                    const groupMark = student?.groupId
+                      ? (c.groups ?? []).find((group) => group.id === student.groupId)
+                      : (c.groups ?? []).find((group) => group.zone.includes(seatId));
                     const studentIssues = (studentId ? issuesByStudent.get(studentId) : undefined) ?? [];
                     const changed =
                       highlightChanges &&
@@ -413,7 +430,9 @@ function SeatBoard({
                     const dim = query && query.trim() && !match;
                     const draggedSeat = dragged ? studentSeat(c.assignments, dragged) : undefined;
                     const draggedNeedsSeat = !!dragged && (!draggedSeat || !seatMap.has(draggedSeat));
-                    const canDrop = !!dragged && !!onDropStudent && !disabled && !readOnly && !layoutMode && !publicMode && !c.locks.includes(dragged) && !c.locks.includes(assignments[seatId]) && (!draggedNeedsSeat || !assignments[seatId]);
+                    const movingGroup = dragCohort.length > 1 && !!dragged && dragCohort.includes(dragged);
+                    const occupant = assignments[seatId];
+                    const canDrop = !!dragged && !!onDropStudent && !disabled && !readOnly && !layoutMode && !publicMode && !frozen && !c.locks.includes(dragged) && (movingGroup ? !dragCohort.some((id) => c.locks.includes(id)) && (!occupant || dragCohort.includes(occupant)) : !c.locks.includes(occupant) && (!draggedNeedsSeat || !occupant));
                     return (
                       <button
                         type="button"
@@ -430,10 +449,13 @@ function SeatBoard({
                               ? `${student.name} · ${seatLabel(seatMap.get(seatId))}${changed ? ` · 上次 ${seatLabel(prevSeat)}` : ""}`
                               : `空位 · 第 ${row + 1} 排`
                         }
-                        className={`seat ${disabled ? "disabled" : ""} ${!student ? "empty" : ""} ${studentId && selected?.includes(studentId) ? "selected" : ""} ${studentId && c.locks.includes(studentId) && !publicMode ? "locked" : ""} ${studentIssues.some((i) => i.severity === "must") ? "conflict" : ""} ${studentIssues.some((i) => i.severity === "prefer") ? "warning" : ""} ${changed ? "changed" : ""} ${highlightChanges && changed ? "proposal-changed" : ""} ${stops.length ? "trajectory-seat" : ""} ${dim ? "dim" : ""} ${match ? "match" : ""} ${canDrop ? "drop-candidate" : ""} ${dragged && dragged === studentId ? "drag-origin" : ""}`}
-                        onClick={(e) => onSeat?.(seatId, e)}
-                        disabled={publicMode || readOnly || (!layoutMode && disabled)}
+                        className={`seat ${disabled ? "disabled" : ""} ${!student ? "empty" : ""} ${studentId && selected?.includes(studentId) ? "selected" : ""} ${markedSeats.includes(seatId) ? "zone-mark" : ""} ${studentId && c.locks.includes(studentId) && !publicMode && !frozen ? "locked" : ""} ${studentIssues.some((i) => i.severity === "must") ? "conflict" : ""} ${studentIssues.some((i) => i.severity === "prefer") ? "warning" : ""} ${changed ? "changed" : ""} ${highlightChanges && changed ? "proposal-changed" : ""} ${stops.length ? "trajectory-seat" : ""} ${dim ? "dim" : ""} ${match ? "match" : ""} ${canDrop ? "drop-candidate" : ""} ${dragged && studentId && (dragged === studentId || (dragCohort.includes(studentId) && dragCohort.includes(dragged))) ? "drag-origin" : ""}`}
+                        onClick={(e) => {
+                          if (!frozen) onSeat?.(seatId, e);
+                        }}
+                        disabled={!frozen && (publicMode || readOnly || (!layoutMode && disabled))}
                         draggable={
+                          !frozen &&
                           !publicMode && !readOnly &&
                           !layoutMode &&
                           !!studentId &&
@@ -441,7 +463,8 @@ function SeatBoard({
                         }
                         onDragStart={(e) => {
                           if (studentId) {
-                            e.dataTransfer.setData("text/plain", studentId);
+                            const cohort = dragCohort.length > 1 && dragCohort.includes(studentId) ? dragCohort : undefined;
+                            e.dataTransfer.setData("text/plain", cohort ? `formation:${studentId}:${cohort.join(",")}` : studentId);
                             e.dataTransfer.effectAllowed = "move";
                             setDragged?.(studentId);
                           }
@@ -450,10 +473,10 @@ function SeatBoard({
                           setDragged?.(undefined);
                         }}
                         onDragEnter={(e) => {
-                          if (onDropStudent && !disabled && !readOnly && !layoutMode && !publicMode) e.preventDefault();
+                          if (onDropStudent && !disabled && !readOnly && !frozen && !layoutMode && !publicMode) e.preventDefault();
                         }}
                         onDragOver={(e) => {
-                          if (onDropStudent && !disabled && !readOnly && !layoutMode && !publicMode) {
+                          if (onDropStudent && !disabled && !readOnly && !frozen && !layoutMode && !publicMode) {
                             e.preventDefault();
                             e.dataTransfer.dropEffect = "move";
                           }
@@ -461,7 +484,7 @@ function SeatBoard({
                         onDrop={(e) => {
                           e.preventDefault();
                           const source = e.dataTransfer.getData("text/plain") || dragged;
-                          if (!disabled && !readOnly && !layoutMode && !publicMode && source) onDropStudent?.(source, seatId);
+                          if (!disabled && !readOnly && !frozen && !layoutMode && !publicMode && source) onDropStudent?.(source, seatId);
                           setDragged?.(undefined);
                         }}
                       >
@@ -469,16 +492,18 @@ function SeatBoard({
                           <span className="seat-disabled-mark">＋</span>
                         ) : (
                           <>
+                            {groupMark && <span className="group-stripe" style={{ background: groupMark.color }} />}
                             {student && <StudentAvatar student={student} />}
                             <span className="seat-name">
                               {dragged && dragged === studentId
                                 ? "移动中…"
                                 : (student?.name ??
-                                  (layoutMode ? "可用" : focused ? "" : "＋"))}
+                                  (layoutMode ? "可用" : frozen || focused || !markEmpty ? "" : "＋"))}
                             </span>
+                            {student && (showScore || !!c.groups?.length || !!student.points) && <span className="seat-points">{student.points ?? 0}</span>}
                             {changed && <span className="seat-change-badge">变</span>}
                             {stops.length > 0 && <span className="trajectory-stops">{stops.map((stop) => <span key={stop.index} title={`第 ${stop.round} 轮 · ${dateText(stop.at)}`}><b>{stop.index}</b><small>{dateText(stop.at)}</small></span>)}</span>}
-                            {!publicMode && !layoutMode && !focused &&
+                            {!publicMode && !frozen && !layoutMode && !focused &&
                               student &&
                               dragged !== studentId && (
                                 <span className="seat-symbols">
@@ -546,9 +571,9 @@ function ComparisonBoards({ left, right }: { left: ComparisonSnapshot; right: Co
   </div>;
 }
 
-export default function App() {
-  const [project, setProject] = useState<ProjectData>(() => loadProject());
-  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(() => hasStoredProject() ? null : "welcome");
+export default function App({ initial }: { initial: ProjectData }) {
+  const [project, setProject] = useState(initial);
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(null);
   const projectRef = useRef(project);
   const [undoState, setUndoState] = useState<{
     past: ProjectData[];
@@ -612,6 +637,10 @@ export default function App() {
   const [toast, setToast] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const dirty = useRef(false);
+  const applyingRemote = useRef(false);
+  const [managed, setManaged] = useState(false);
+  const [pinAsk, setPinAsk] = useState<"" | "verify" | "set" | "change">("");
   const c =
     project.classes.find((item) => item.id === project.activeClassId) ??
     project.classes[0];
@@ -697,9 +726,64 @@ export default function App() {
     : Array.from({ length: publicClass.layout.rows }, (_, i) => i);
 
   useEffect(() => {
-    if (onboardingStep !== null) return;
-    setSaveOkay(saveProject(project));
-  }, [project, onboardingStep]);
+    if (applyingRemote.current) {
+      applyingRemote.current = false;
+      return;
+    }
+    dirty.current = true;
+    const timer = window.setTimeout(() => {
+      const snapshot = projectRef.current;
+      void pushProject(snapshot).then(async (result) => {
+        setSaveOkay(result === true);
+        if (result !== true) {
+          setToast(result);
+          return;
+        }
+        try {
+          const next = await pullProject();
+          if (projectRef.current !== snapshot) return;
+          next.activeClassId = snapshot.activeClassId;
+          dirty.current = false;
+          applyingRemote.current = true;
+          projectRef.current = next;
+          setProject(next);
+        } catch {
+          dirty.current = false;
+        }
+      });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [project]);
+  useEffect(() => {
+    let timer = 0;
+    const refresh = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (dirty.current) return;
+        void pullProject()
+          .then((next) => {
+            if (dirty.current) return;
+            const active = projectRef.current.activeClassId;
+            if (next.classes.some((item) => item.id === active)) next.activeClassId = active;
+            applyingRemote.current = true;
+            projectRef.current = next;
+            setProject(next);
+          })
+          .catch(() => setSaveOkay(false));
+      }, 400);
+    };
+    const channel = supabase
+      .channel("class-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "classes" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "students" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "groups" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "point_events" }, refresh)
+      .subscribe();
+    return () => {
+      window.clearTimeout(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, []);
   useEffect(() => {
     setDragged(undefined);
   }, [view]);
@@ -744,7 +828,62 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+  async function awardPoints(studentId: string, delta: number, reason?: string) {
+    try {
+      const points = await addPoints(studentId, delta, reason);
+      commit((_, cl) => {
+        const student = cl.students.find((item) => item.id === studentId);
+        if (student) student.points = points;
+      });
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "积分没有记上");
+    }
+  }
+  async function openManage() {
+    try {
+      const status = await pinStatus();
+      if (status === "anonymous") {
+        setToast("请先登录，再进入管理。");
+        return;
+      }
+      setPinAsk(status === "set" ? "verify" : "set");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "暂时无法读取 PIN");
+    }
+  }
+  function lockStage() {
+    setManaged(false);
+    setSelected([]);
+    setView("classroom");
+    setPanel("none");
+    setLayoutMode(false);
+  }
+  function putInGroup(studentIds: string[], groupId: string) {
+    if (!studentIds.length) return;
+    commit((_, cl) => {
+      let nextId = groupId;
+      if (groupId === "new") {
+        const group = freshGroup(cl, `第 ${(cl.groups ?? []).length + 1} 组`);
+        cl.groups = [...(cl.groups ?? []), group];
+        nextId = group.id;
+      }
+      for (const student of cl.students) {
+        if (!studentIds.includes(student.id)) continue;
+        if (nextId) student.groupId = nextId;
+        else delete student.groupId;
+      }
+    });
+    setToast(groupId === "new" ? "已编成新的一组" : "已调整小组");
+  }
+  function leaveGroup(studentIds: string[]) {
+    commit((_, cl) => {
+      for (const student of cl.students) {
+        if (studentIds.includes(student.id)) student.groupId = undefined;
+      }
+    });
+  }
   function commit(update: (data: ProjectData, cl: ClassData) => void) {
+    dirty.current = true;
     const before = projectRef.current;
     const next = clone(before);
     const cl =
@@ -761,6 +900,7 @@ export default function App() {
     setUndoState(h);
   }
   function updateProject(update: (data: ProjectData) => void) {
+    dirty.current = true;
     const next = clone(projectRef.current);
     update(next);
     projectRef.current = next;
@@ -818,6 +958,23 @@ export default function App() {
     else setSelected([sid]);
   }
   function swapTo(studentId: string, targetSeat: string) {
+    if (studentId.startsWith("formation:")) {
+      const [, anchor, packed] = studentId.split(":");
+      const ids = (packed ?? "").split(",").filter(Boolean);
+      const moved = moveFormation(c, ids, anchor, targetSeat);
+      if (!moved.ok) {
+        setToast(moved.reason);
+        return;
+      }
+      const sourceSeat = studentSeat(c.assignments, anchor);
+      if (sourceSeat && sourceSeat !== targetSeat)
+        setSeatMotion({ fromSeat: sourceSeat, toSeat: targetSeat, swap: false, token: performance.now() });
+      commit((_, cl) => {
+        cl.assignments = moved.assignments;
+      });
+      setToast("这一组已经一起移动。可撤销。");
+      return;
+    }
     const sourceSeat = studentSeat(c.assignments, studentId);
     const result = moveStudentToSeat(c, studentId, targetSeat);
     if (!result.ok) {
@@ -1423,6 +1580,8 @@ export default function App() {
     </main>
   );
 
+  const stage = view === "classroom" && !layoutMode;
+
   if (publicMode)
     return (
       <main className="projection" aria-label="学生投影视图">
@@ -1489,7 +1648,7 @@ export default function App() {
     );
 
   return (
-    <div className="app">
+    <div className={`app ${stage ? "stage" : ""} ${managed ? "stage-managed" : ""}`}>
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">
@@ -1533,7 +1692,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="storage-status">
             <span className={`status-dot ${saveOkay ? "" : "danger"}`} />
-            {saveOkay ? "已保存在本机" : "本机保存失败，请导出备份"}
+            {saveOkay ? "已同步到云端" : "云端同步失败，请稍后再改一次"}
           </div>
           <button
             className="nav"
@@ -1552,6 +1711,7 @@ export default function App() {
           >
             <Settings2 size={18} /> 编辑教室
           </button>
+          <AccountMenu />
         </div>
       </aside>
       <div className="main-shell">
@@ -1614,6 +1774,7 @@ export default function App() {
           >
             <Redo2 size={18} />
           </button>
+          <AccountMenu placement="bar" />
         </header>
         <nav className="mobile-nav" aria-label="移动端导航">
           <button className={view === "classroom" && panel === "none" ? "active" : ""} onClick={() => { setView("classroom"); setPanel("none"); setLayoutMode(false); }}><LayoutGrid size={16} />座位</button>
@@ -1675,7 +1836,7 @@ export default function App() {
           )}
           {!saveOkay && (
             <div className="notice error">
-              <CircleAlert size={18} /> 本机保存失败，建议立即导出备份。
+              <CircleAlert size={18} /> 云端同步失败，改动还在这台设备上，请再试一次或先导出备份。
               <button onClick={exportBackup}>导出备份</button>
             </div>
           )}
@@ -1757,6 +1918,31 @@ export default function App() {
               </button>
             </section>
             <section className="board-column">
+              {stage && (
+                <div className="stage-bar">
+                  <div className="stage-title">
+                    <b>{c.name}</b>
+                    <span>{c.published ? `第 ${c.round} 轮` : "工作草稿"}</span>
+                    {(c.groups ?? []).map((group) => (
+                      <i key={group.id} style={{ background: group.color }} title={group.name} />
+                    ))}
+                  </div>
+                  <div className="stage-actions">
+                    {managed ? (
+                      <>
+                        <button className="button ghost" onClick={() => openGenerate(false)}>帮我排</button>
+                        <button className="button ghost" onClick={() => { setView("roster"); setPanel("none"); setLayoutMode(false); }}>名单与规则</button>
+                        <button className="button ghost" onClick={() => { setView("history"); setPanel("none"); }}>历史</button>
+                        <button className="button ghost" onClick={() => { setView("layout"); setPanel("none"); setLayoutMode(true); }}>教室</button>
+                        <button className="button ghost" onClick={lockStage}><LockKeyhole size={16} /> 锁定</button>
+                      </>
+                    ) : (
+                      <button className="button primary" onClick={() => void openManage()}>输入 PIN 管理</button>
+                    )}
+                    <AccountMenu placement="stage" />
+                  </div>
+                </div>
+              )}
               <div className="board-toolbar">
                 <div className="board-toolbar-left">
                   <span className="view-pill">
@@ -1830,9 +2016,50 @@ export default function App() {
                   zoom={zoom}
                   previous={previewingProposal ? c.assignments : undefined}
                   highlightChanges={previewingProposal}
-                  readOnly={previewingProposal}
+                  readOnly={previewingProposal || (stage && !managed)}
+                  frozen={stage && !managed}
+                  dragCohort={managed ? selected : []}
+                  showScore={stage}
+                  markEmpty={!stage || !!swapSource}
                   motion={seatMotion}
                 />
+              )}
+              {stage && managed && selected.length > 0 && (
+                <div className="seat-dock">
+                  <b>{selected.length === 1 ? current?.name : `已选 ${selected.length} 人`}</b>
+                  {selected.length === 1 && current && (
+                    <span className="seat-dock-points">{current.points ?? 0} 分</span>
+                  )}
+                  {selected.length === 1 && current && (
+                    <>
+                      <button className="button mini" onClick={() => void awardPoints(current.id, -1)}>-1</button>
+                      <button className="button mini" onClick={() => void awardPoints(current.id, 1)}>+1</button>
+                      <button className="button mini" onClick={() => void awardPoints(current.id, 5)}>+5</button>
+                    </>
+                  )}
+                  <select
+                    aria-label="调整小组"
+                    value={selected.length === 1 ? current?.groupId ?? "" : ""}
+                    onChange={(event) => (event.target.value ? putInGroup(selected, event.target.value) : leaveGroup(selected))}
+                  >
+                    <option value="" disabled={selected.length > 1}>
+                      {selected.length > 1 ? "加入小组" : "未分组"}
+                    </option>
+                    {(c.groups ?? []).map((group) => (
+                      <option key={group.id} value={group.id}>{group.name}</option>
+                    ))}
+                    <option value="new">编成新的一组</option>
+                  </select>
+                  {selected.length === 1 && current?.groupId && (
+                    <button className="button mini" onClick={() => setSelected(c.students.filter((student) => student.groupId === current.groupId).map((student) => student.id))}>
+                      选中整组
+                    </button>
+                  )}
+                  {selected.some((id) => c.students.find((student) => student.id === id)?.groupId) && (
+                    <button className="button mini" onClick={() => leaveGroup(selected)}>移出小组</button>
+                  )}
+                  <span className="seat-dock-hint">{selected.length > 1 ? "拖动其中一人，整组一起移动" : "按住 Shift 再点其他同学，可以一起编组"}</span>
+                </div>
               )}
               <div className="board-footer">
                 <div className="legend">
@@ -2204,6 +2431,31 @@ export default function App() {
           </>}
         </main>
       </div>
+      {pinAsk && (
+        <PinDialog
+          title={pinAsk === "set" ? "设置 PIN" : pinAsk === "change" ? "修改 PIN" : "进入管理"}
+          confirmNew={pinAsk !== "verify"}
+          askCurrent={pinAsk === "change"}
+          onClose={() => setPinAsk("")}
+          onSubmit={async (pin, currentPin) => {
+            try {
+              if (pinAsk === "set") await setPin(pin);
+              else if (pinAsk === "change") await changePin(currentPin ?? "", pin);
+              else if (!(await verifyPin(pin))) return "PIN 不正确";
+              if (pinAsk !== "change") {
+                setManaged(true);
+                setView("classroom");
+                setPanel("none");
+                setLayoutMode(false);
+              }
+              setPinAsk("");
+              return "";
+            } catch (error) {
+              return error instanceof Error ? error.message : "没有成功";
+            }
+          }}
+        />
+      )}
       {toast && (
         <div className="toast" role="status">
           {toast}

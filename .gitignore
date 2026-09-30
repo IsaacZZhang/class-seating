@@ -4,5 +4,6 @@ dist/
 .dev.vars*
 *.tsbuildinfo
 .env*
+!.env.example
 .DS_Store
 work/
