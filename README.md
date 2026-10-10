@@ -15,6 +15,17 @@ npm run dev
 
 首次打开会进入设置向导。可以创建班级并导入名单，也可以先用示例班级体验。后续数据会自动保存在当前浏览器中。
 
+## Cloudflare Workers 自动部署
+
+这是 Vite 静态前端，Supabase 配置在 `npm run build` 时写入浏览器脚本。Cloudflare 提示“不能将变量添加到只有静态资产的 Worker”时，应在 **Workers & Pages → class-seating → Settings → Build → Build variables and secrets** 中设置构建变量，而不是在运行时的 **Variables & Secrets** 中设置。添加以下两个变量，值从 Supabase 项目的 **Connect** 面板获取：
+
+```text
+VITE_SUPABASE_URL=https://你的项目.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_你的密钥
+```
+
+构建命令设为 `npm run build`，部署命令设为 `npx wrangler deploy`，根目录使用仓库根目录。保存变量后重新运行构建并部署；已生成的静态文件不会因为修改变量而自动更新。本地开发继续使用被 Git 忽略的 `.env.local`。这里只能使用 Supabase 的 **publishable key**，不要填写 secret key 或 `service_role` key。浏览器会看到 publishable key，因此 Supabase 数据表仍须配置合适的 RLS 策略。
+
 ## 使用流程
 
 ### 1. 建立班级和教室
