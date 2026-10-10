@@ -81,11 +81,12 @@ import {
   id,
 } from "./model";
 import { migrateProject } from "./storage";
-import { addPoints, changePin, pinStatus, pullProject, pushProject, setPin, supabase, verifyPin } from "./cloud";
+import { addPoints, changePin, getPointHistory, pinStatus, pullProject, pushProject, setPin, supabase, verifyPin, type PointEvent } from "./cloud";
 import { GroupRings } from "./group-ring";
 import { freshGroup, moveFormation } from "./groups";
 import { AccountMenu } from "./account";
 import { PinDialog } from "./meeting";
+import { RosterGroups } from "./roster-groups";
 import boyAvatar from "../ui/png/男生无眼镜.png";
 import boyGlassesAvatar from "../ui/png/男生戴眼镜.png";
 import girlAvatar from "../ui/png/女生无眼镜.png";
@@ -103,7 +104,7 @@ type Panel =
   | "adjust"
   | "backup";
 type GenerateStep = "goal" | "review" | "results";
-type View = "classroom" | "roster" | "layout" | "trajectory" | "history" | "groups";
+type View = "classroom" | "roster" | "layout" | "trajectory" | "history";
 type OnboardingStep = "welcome" | "class" | "students" | "layout";
 type TrajectoryPoint = { seatId: string; round: number; at: string };
 type ComparisonSnapshot = { label: string; c: ClassData; assignments: Assignment; meta?: string };
@@ -170,6 +171,10 @@ const dateText = (value?: string) => value
     ? value.replace(/-/g, "/")
     : new Date(value).toLocaleDateString("zh-CN", { year: "numeric", month: "numeric", day: "numeric" })
   : "暂无";
+const pointTime = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "日期未知" : date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+};
 const todayInput = () => {
   const day = new Date();
   return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
@@ -655,9 +660,16 @@ export default function App({ initial }: { initial: ProjectData }) {
   }>({ past: [], future: [] });
   const historyRef = useRef(undoState);
   const [saveOkay, setSaveOkay] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const syncPromiseRef = useRef<Promise<void> | null>(null);
+  const pendingManageAction = useRef<(() => void) | null>(null);
   const [panel, setPanel] = useState<Panel>("none");
   const [view, setView] = useState<View>("classroom");
   const [rosterChecked, setRosterChecked] = useState<string[]>([]);
+  const [rosterAside, setRosterAside] = useState<"groups" | "trajectory">("groups");
+  const [pointHistory, setPointHistory] = useState<{ studentId: string; events: PointEvent[]; error: string; loading: boolean }>({ studentId: "", events: [], error: "", loading: false });
+  const pointHistoryRequest = useRef(0);
+  const [pointReason, setPointReason] = useState("");
   const [expandedStudent, setExpandedStudent] = useState("");
   const [trajectoryStudent, setTrajectoryStudent] = useState("");
   const [trajectoryLimit, setTrajectoryLimit] = useState<"3" | "5" | "all">("3");
@@ -799,15 +811,14 @@ export default function App({ initial }: { initial: ProjectData }) {
     ? changedRows
     : Array.from({ length: publicClass.layout.rows }, (_, i) => i);
 
-  useEffect(() => {
-    if (applyingRemote.current) {
-      applyingRemote.current = false;
-      return;
-    }
-    dirty.current = true;
-    const timer = window.setTimeout(() => {
-      const snapshot = projectRef.current;
-      void pushProject(snapshot).then(async (result) => {
+  async function syncSnapshot(snapshot: ProjectData) {
+    if (syncPromiseRef.current) await syncPromiseRef.current;
+    if (projectRef.current !== snapshot) return;
+    const task = (async () => {
+      setSyncing(true);
+      try {
+        const result = await pushProject(snapshot);
+        if (projectRef.current !== snapshot) return;
         setSaveOkay(result === true);
         if (result !== true) {
           setToast(result);
@@ -823,9 +834,27 @@ export default function App({ initial }: { initial: ProjectData }) {
           setProject(next);
         } catch {
           dirty.current = false;
+          setToast("已写入云端，但暂时无法刷新数据。可稍后重试。");
         }
-      });
-    }, 700);
+      } catch (error) {
+        if (projectRef.current !== snapshot) return;
+        setSaveOkay(false);
+        setToast(error instanceof Error ? error.message : "云端同步失败");
+      } finally {
+        setSyncing(false);
+      }
+    })();
+    syncPromiseRef.current = task;
+    await task;
+    if (syncPromiseRef.current === task) syncPromiseRef.current = null;
+  }
+  useEffect(() => {
+    if (applyingRemote.current) {
+      applyingRemote.current = false;
+      return;
+    }
+    dirty.current = true;
+    const timer = window.setTimeout(() => void syncSnapshot(projectRef.current), 700);
     return () => window.clearTimeout(timer);
   }, [project]);
   useEffect(() => {
@@ -884,6 +913,11 @@ export default function App({ initial }: { initial: ProjectData }) {
         else undo();
         return;
       }
+      if (e.key === "Escape" && panel !== "none") {
+        setPanel("none");
+        setLayoutMode(false);
+        return;
+      }
       if (typing) return;
       if (e.key === "Escape") {
         setSelected([]);
@@ -910,10 +944,25 @@ export default function App({ initial }: { initial: ProjectData }) {
         const student = cl.students.find((item) => item.id === studentId);
         if (student) student.points = points;
       });
+      if (view === "roster" && expandedStudent === studentId) void loadPointHistory(studentId);
+      setPointReason("");
     } catch (error) {
       setToast(error instanceof Error ? error.message : "积分没有记上");
     }
   }
+  async function loadPointHistory(studentId: string) {
+    const request = ++pointHistoryRequest.current;
+    setPointHistory({ studentId, events: [], error: "", loading: true });
+    try {
+      const events = await getPointHistory(studentId);
+      if (request === pointHistoryRequest.current) setPointHistory({ studentId, events, error: "", loading: false });
+    } catch (error) {
+      if (request === pointHistoryRequest.current) setPointHistory({ studentId, events: [], error: error instanceof Error ? error.message : "暂时无法读取积分记录", loading: false });
+    }
+  }
+  useEffect(() => {
+    if (view === "roster" && expandedStudent) void loadPointHistory(expandedStudent);
+  }, [view, expandedStudent]);
   async function openManage() {
     try {
       const status = await pinStatus();
@@ -928,6 +977,7 @@ export default function App({ initial }: { initial: ProjectData }) {
   }
   function requireManage(action: () => void) {
     if (!managed) {
+      pendingManageAction.current = action;
       void openManage();
       return;
     }
@@ -951,16 +1001,24 @@ export default function App({ initial }: { initial: ProjectData }) {
       }
       for (const student of cl.students) {
         if (!studentIds.includes(student.id)) continue;
+        const previous = (cl.groups ?? []).find((group) => group.id === student.groupId);
+        if (previous) previous.zone = [];
         if (nextId) student.groupId = nextId;
         else delete student.groupId;
       }
+      const destination = (cl.groups ?? []).find((group) => group.id === nextId);
+      if (destination) destination.zone = [];
     });
     setToast(groupId === "new" ? "已编成新的一组" : "已调整小组");
   }
   function leaveGroup(studentIds: string[]) {
     commit((_, cl) => {
       for (const student of cl.students) {
-        if (studentIds.includes(student.id)) student.groupId = undefined;
+        if (studentIds.includes(student.id)) {
+          const previous = (cl.groups ?? []).find((group) => group.id === student.groupId);
+          if (previous) previous.zone = [];
+          student.groupId = undefined;
+        }
       }
     });
   }
@@ -1080,6 +1138,24 @@ export default function App({ initial }: { initial: ProjectData }) {
         ? `${studentName(c, studentId)}与${studentName(c, otherId)}已交换。可撤销。`
         : `${studentName(c, studentId)}${wasUnseated ? "已安排座位" : "已移动"}。可撤销。`,
     );
+  }
+  function unseatStudent(studentId: string) {
+    const student = c.students.find((item) => item.id === studentId);
+    if (!student || !studentSeat(c.assignments, studentId)) return;
+    if (c.locks.includes(studentId)) {
+      setToast("请先解锁这名学生，再放回待安排。");
+      return;
+    }
+    commit((_, cl) => {
+      cl.assignments = Object.fromEntries(
+        Object.entries(cl.assignments).filter(([, id]) => id !== studentId),
+      );
+      cl.protectedIds = cl.protectedIds.filter((id) => id !== studentId);
+    });
+    setSelected([studentId]);
+    setSwapSource(undefined);
+    setDragged(undefined);
+    setToast(`${student.name}已放回待安排。可撤销。`);
   }
   function toggleLocks() {
     if (!selected.length) return;
@@ -1589,6 +1665,16 @@ export default function App({ initial }: { initial: ProjectData }) {
   const visibleStudents = c.students.filter(
     (s) => s.name.includes(search.trim()) || s.number?.includes(search.trim()),
   ).sort((a, b) => Number(isUnseated(b.id)) - Number(isUnseated(a.id)));
+  const rosterSections = [
+    ...(c.groups ?? []).map((group) => ({ id: group.id, name: group.name, color: group.color, students: visibleStudents.filter((student) => student.groupId === group.id) })),
+    { id: "ungrouped", name: "未分组", color: "#9aa9ba", students: visibleStudents.filter((student) => !student.groupId || !(c.groups ?? []).some((group) => group.id === student.groupId)) },
+  ].filter((section) => section.students.length > 0);
+  function focusRosterStudent(studentId: string) {
+    setSearch("");
+    setExpandedStudent(studentId);
+    setPointReason("");
+    requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(`roster-student-${studentId}`)?.scrollIntoView({ behavior: "smooth", block: "center" })));
+  }
   function startOnboardingClass() {
     const name = classNameInput.trim();
     if (!name) { setImportError("先输入班级名称。"); return; }
@@ -1730,7 +1816,7 @@ export default function App({ initial }: { initial: ProjectData }) {
     );
 
   return (
-    <div className={`app ${stage ? "stage" : ""} ${managed ? "stage-managed" : ""}`}>
+    <div className={`app ${managed ? "stage-managed" : ""}`}>
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">
@@ -1774,7 +1860,7 @@ export default function App({ initial }: { initial: ProjectData }) {
         <div className="sidebar-bottom">
           <div className="storage-status">
             <span className={`status-dot ${saveOkay ? "" : "danger"}`} />
-            {saveOkay ? "已同步到云端" : "云端同步失败，请稍后再改一次"}
+            {saveOkay ? "已同步到云端" : "云端同步失败，请重试"}
           </div>
           <button
             className="nav"
@@ -1828,7 +1914,11 @@ export default function App({ initial }: { initial: ProjectData }) {
             <button className={`button ${view === "layout" ? "active" : ""}`} onClick={() => requireManage(() => { setView("layout"); setPanel("none"); setLayoutMode(true); })}>教室</button>
             <button className={`button ${panel === "backup" ? "active" : ""}`} onClick={() => requireManage(() => { setPanel("backup"); setImportError(""); })}>备份</button>
           </nav>
-          <div className="topbar-round">{c.published ? `第 ${c.round} 轮` : "草稿"}</div>
+          <div className="topbar-context" aria-label="当前班级状态">
+            <strong>第 {draftRound} 轮草稿</strong>
+            <span>{c.students.length} 人 · {seatsOf(c).length} 座</span>
+            <span className={hasDraftChanges ? "draft-pending" : ""}>{hasDraftChanges ? "待发布" : c.published ? "与正式版一致" : "尚无正式版"}</span>
+          </div>
           <div className="topbar-spacer" />
           <div className="searchbox">
             <Search size={18} />
@@ -1861,9 +1951,19 @@ export default function App({ initial }: { initial: ProjectData }) {
           >
             <Redo2 size={18} />
           </button>
+          {!saveOkay && (
+            <button className="button danger" disabled={syncing} onClick={() => void syncSnapshot(projectRef.current)}>
+              {syncing ? "同步中…" : "重试同步"}
+            </button>
+          )}
           <button className="button" onClick={() => requireManage(() => setPanel("newclass"))}>
             <Plus size={15} /> 新建班级
           </button>
+          {view === "classroom" && <div className="topbar-classroom-actions">
+            <button title="对比上一版" aria-label="对比上一版" disabled={!c.published || (!hasDraftChanges && c.versions.length < 2)} onClick={openHistory}><ArrowDownUp size={17} /></button>
+            <button title="投影视图" aria-label="投影视图" disabled={!c.published} onClick={() => { setPublicMode(true); setMoveStep(0); }}><Maximize2 size={17} /></button>
+            <button title="打印" aria-label="打印" onClick={() => setPanel("print")}><Printer size={17} /></button>
+          </div>}
           {managed ? (
             <button className="button" onClick={lockStage}><LockKeyhole size={15} /> 锁定</button>
           ) : (
@@ -1881,48 +1981,6 @@ export default function App({ initial }: { initial: ProjectData }) {
         </nav>
         <main className={`workspace workspace-${view}`}>
           {view === "classroom" ? <>
-          <div className="workspace-heading">
-            <div>
-              <span className="eyebrow">
-                当前教室 <span className="eyebrow-line" />
-              </span>
-              <h1>
-                {c.name} <span className="heading-sub">第 {draftRound} 轮工作草稿</span>
-              </h1>
-              <p>
-                {c.students.length} 名学生 · {seatsOf(c).length} 个座位{" "}
-                {draftChanged > 0 && c.published
-                  ? `· 与已发布座位相比 ${draftChanged} 人调整`
-                  : ""}
-              </p>
-              <div className="draft-status"><span className="status-chip draft">{hasDraftChanges ? "草稿 · 待发布" : "草稿 · 与正式版一致"}</span><span className="status-chip official">{c.published ? `正式使用 · 第 ${c.round} 轮 · ${lastVersion ? dateText(versionDate(lastVersion)) : dateText(c.publishedAt)}` : "尚无正式版"}</span></div>
-            </div>
-            <div className="heading-actions">
-              <button
-                className="button ghost"
-                onClick={openHistory}
-                disabled={!c.published || (!hasDraftChanges && c.versions.length < 2)}
-              >
-                <ArrowDownUp size={17} /> 对比上一版
-              </button>
-              <button
-                className="button ghost"
-                onClick={() => {
-                  setPublicMode(true);
-                  setMoveStep(0);
-                }}
-                disabled={!c.published}
-              >
-                <Maximize2 size={17} /> 投影视图
-              </button>
-              <button
-                className="button ghost"
-                onClick={() => setPanel("print")}
-              >
-                <Printer size={17} /> 打印
-              </button>
-            </div>
-          </div>
           {c.pending && (
             <div className="notice positive">
               <Clock3 size={18} /> 第 {c.pending.round} 轮待启用 · {dateText(c.pending.effectiveDate || c.pending.at)}{c.pending.semesterWeek ? ` · 第 ${c.pending.semesterWeek} 周` : ""}{c.pending.note ? ` · ${c.pending.note}` : ""}
@@ -1931,7 +1989,8 @@ export default function App({ initial }: { initial: ProjectData }) {
           )}
           {!saveOkay && (
             <div className="notice error">
-              <CircleAlert size={18} /> 云端同步失败，改动还在这台设备上，请再试一次或先导出备份。
+              <CircleAlert size={18} /> 云端同步失败，改动仍在当前页面。请重试同步；刷新前可先导出备份。
+              <button disabled={syncing} onClick={() => void syncSnapshot(projectRef.current)}>{syncing ? "同步中…" : "重试同步"}</button>
               <button onClick={exportBackup}>导出备份</button>
             </div>
           )}
@@ -1945,6 +2004,23 @@ export default function App({ initial }: { initial: ProjectData }) {
               </div>
               <div className="list-search-note">
                 待安排学生可拖到空座位，或点击姓名后点击空位
+              </div>
+              <div
+                className={`unseat-drop-zone ${dragged && !c.locks.includes(dragged) && selected.length <= 1 && studentSeat(c.assignments, dragged) ? "ready" : ""}`}
+                onDragOver={(event) => {
+                  if (managed && !previewingProposal && dragged && selected.length <= 1 && !c.locks.includes(dragged) && studentSeat(c.assignments, dragged)) {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const studentId = event.dataTransfer.getData("text/plain");
+                  if (managed && !previewingProposal && studentId && !studentId.startsWith("formation:")) unseatStudent(studentId);
+                  setDragged(undefined);
+                }}
+              >
+                <span>待安排</span><small>把座位上的同学拖到这里</small>
               </div>
               <div className="student-list">
                 {visibleStudents.map((s) => {
@@ -2012,7 +2088,7 @@ export default function App({ initial }: { initial: ProjectData }) {
                 <Plus size={16} /> 添加或导入学生
               </button>
             </section>
-            <section className="board-column">
+            <section className={`board-column ${stage && !managed ? "view-locked" : ""}`}>
               <div className="board-toolbar">
                 <div className="board-toolbar-left">
                   <span className="view-pill">
@@ -2106,6 +2182,9 @@ export default function App({ initial }: { initial: ProjectData }) {
                   )}
                   {selected.length === 1 && current && (
                     <>
+                      {studentSeat(c.assignments, current.id) && (
+                        <button className="button mini" disabled={c.locks.includes(current.id)} onClick={() => unseatStudent(current.id)}>放回待安排</button>
+                      )}
                       <button className="button mini" onClick={() => void awardPoints(current.id, -1)}>-1</button>
                       <button className="button mini" onClick={() => void awardPoints(current.id, 1)}>+1</button>
                       <button className="button mini" onClick={() => void awardPoints(current.id, 5)}>+5</button>
@@ -2294,6 +2373,11 @@ export default function App({ initial }: { initial: ProjectData }) {
                     >
                       <ArrowDownUp size={16} /> 换座
                     </button>
+                    {studentSeat(c.assignments, current.id) && (
+                      <button className="button outline" disabled={c.locks.includes(current.id) || !managed || previewingProposal} onClick={() => unseatStudent(current.id)}>
+                        放回待安排
+                      </button>
+                    )}
                     <button className="button outline" onClick={openAdjust}>
                       <WandSparkles size={16} /> 帮我调一下
                     </button>
@@ -2421,8 +2505,6 @@ export default function App({ initial }: { initial: ProjectData }) {
                   <div className="insight-art"><img src={deskIllustration} alt="书桌与小黑板插画" loading="lazy" /><span>每一次调整，都有迹可循</span></div>
                 </>
               )}
-            </aside>
-          </div>
           <div className="bottom-actions">
             <button
               className="button primary large"
@@ -2469,6 +2551,8 @@ export default function App({ initial }: { initial: ProjectData }) {
               </span>
             </button>
           </div>
+            </aside>
+          </div>
           {seatsOf(c).length < c.students.length && (
             <div className="capacity-warning">
               <CircleAlert size={16} /> 当前少{" "}
@@ -2492,8 +2576,8 @@ export default function App({ initial }: { initial: ProjectData }) {
               </section>
             </div>
           </> : view === "roster" ? <>
-            <div className="page-heading"><div><span className="eyebrow">班级资料</span><h1>学生与规则</h1><p>{c.students.length} 名学生 · {c.rules.length} 条排座规则 · 点击学生可查看轨迹和编辑规则</p></div><div className="page-actions"><button className="button outline" onClick={() => setPanel("import")}><Upload size={16} /> 导入名单</button><button className="button primary" onClick={() => { setPanel("import"); setImportError(""); }}><Plus size={16} /> 添加学生</button></div></div>
-            <div className="roster-layout"><section className="roster-card"><div className="roster-toolbar"><label><input type="checkbox" aria-label="全选筛选结果" checked={visibleStudents.length > 0 && visibleStudents.every((student) => rosterChecked.includes(student.id))} onChange={(e) => setRosterChecked(e.target.checked ? Array.from(new Set([...rosterChecked, ...visibleStudents.map((student) => student.id)])) : rosterChecked.filter((sid) => !visibleStudents.some((student) => student.id === sid)))} /> 全选当前列表</label><span>已选 {rosterChecked.length} 人</span><button className="button mini danger" disabled={!rosterChecked.length} onClick={() => removeStudents(rosterChecked)}>批量删除</button></div><div className="roster-table-head"><span>学生</span><span>当前座位</span><span>排座规则</span><span>学生关系</span><span /></div><div className="roster-rows">{visibleStudents.map((student) => { const studentRules = active.filter((rule) => rule.studentId === student.id || rule.targetId === student.id); const needs = studentRules.filter((rule) => rule.type === "need"); const relations = studentRules.filter((rule) => rule.type === "relation"); const seat = seatsOf(c).find((item) => item.id === studentSeat(c.assignments, student.id)); const open = expandedStudent === student.id; return <div className={`roster-row-wrap ${open ? "open" : ""}`} key={student.id}><div className="roster-row"><input type="checkbox" aria-label={`选择${student.name}`} checked={rosterChecked.includes(student.id)} onChange={(e) => setRosterChecked((before) => e.target.checked ? [...before, student.id] : before.filter((sid) => sid !== student.id))} /><button className="roster-person" onClick={() => setExpandedStudent(open ? "" : student.id)}><StudentAvatar student={student} /><span><b>{student.name}</b><small>{student.gender === "boy" ? "男生" : student.gender === "girl" ? "女生" : "性别未标注"}{student.number ? ` · 学号 ${student.number}` : ""}</small></span></button><span className="roster-seat">{seatLabel(seat)}</span><span className="roster-tags">{needs.length ? needs.map((rule) => <small key={rule.id} className={rule.priority}>{needText[rule.need ?? ""]}</small>) : <small>无座位要求</small>}</span><span className="roster-tags">{relations.length ? relations.map((rule) => <small key={rule.id} className={rule.priority}>{studentName(c, rule.studentId === student.id ? rule.targetId : rule.studentId)} · {relationText[rule.relation ?? ""]}</small>) : <small>无关系规则</small>}</span><button className="icon-button" aria-label={`展开${student.name}轨迹`} onClick={() => setExpandedStudent(open ? "" : student.id)}>{open ? <ChevronDown size={17} /> : <ChevronRight size={17} />}</button></div>{open && <div className="roster-expanded"><div><strong>座位轮换轨迹</strong><p>{c.versions.length ? "右侧教室图已标出历轮座位与移动方向。" : "发布第一轮座位后会记录轨迹。"}</p></div><div className="roster-timeline">{c.versions.map((version) => { const seatId = studentSeat(version.assignments, student.id); const oldClass = { ...c, layout: version.layout ?? c.layout }; const place = seatsOf(oldClass).find((item) => item.id === seatId); return <span key={version.id}>第 {version.round} 轮 · {dateText(versionDate(version))} · {seatLabel(place)}</span>; })}</div><div className="student-appearance"><strong>学生标识</strong><label>性别<select aria-label={`${student.name}的性别`} value={student.gender ?? ""} onChange={(e) => commit((_, cl) => { const item = cl.students.find((entry) => entry.id === student.id); if (item) item.gender = (e.target.value || undefined) as Gender | undefined; })}><option value="">未标注</option><option value="boy">男生</option><option value="girl">女生</option></select></label><label className="student-glasses"><input type="checkbox" checked={!!student.glasses} disabled={!student.gender} onChange={(e) => commit((_, cl) => { const item = cl.students.find((entry) => entry.id === student.id); if (item) item.glasses = e.target.checked; })} /> 戴眼镜</label></div>{renderStudentRules(student)}<div className="roster-inline-actions"><button className="button mini" onClick={() => { setEditingStudent(student.id); setEditingName(student.name); }}>改名</button><button className="button mini" onClick={() => { setView("trajectory"); setTrajectoryStudent(student.id); }}>查看完整轨迹</button><button className="button mini danger" onClick={() => removeStudents([student.id])}>删除</button></div>{editingStudent === student.id && <div className="inline-input"><input value={editingName} onChange={(e) => setEditingName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") renameStudent(student.id); }} /><button className="button primary" onClick={() => renameStudent(student.id)}>保存姓名</button></div>}</div>}</div>; })}{!visibleStudents.length && <p className="muted">没有找到学生，可从上方导入名单。</p>}</div></section><aside className="roster-map"><div className="roster-map-head"><div><h2>{expandedStudent ? `${studentName(c, expandedStudent)}的座位轨迹` : "选择学生查看轨迹"}</h2><p>序号按发布时间排列，箭头指向下一轮。</p></div></div><div className="trajectory-filters"><label>显示<select value={trajectoryLimit} onChange={(e) => setTrajectoryLimit(e.target.value as "3" | "5" | "all")}><option value="3">最近 3 轮</option><option value="5">最近 5 轮</option><option value="all">全部轮次</option></select></label></div><SeatBoard c={c} assignments={c.assignments} trajectory={trajectoryPoints} focusStudentId={expandedStudent} selected={expandedStudent ? [expandedStudent] : []} readOnly /><p className="muted">历史教室中已移除的座位无法在当前教室图定位，仍可在左侧文字轨迹中查看。</p></aside></div>
+            <div className="page-heading"><div><span className="eyebrow">班级资料</span><h1>名单与规则</h1><p>{c.students.length} 名学生 · {c.groups?.length ?? 0} 个小组 · {c.rules.length} 条排座规则。勾选学生可直接编组。</p></div><div className="page-actions"><button className="button outline" onClick={() => setPanel("import")}><Upload size={16} /> 导入名单</button><button className="button primary" onClick={() => { setPanel("import"); setImportError(""); }}><Plus size={16} /> 添加学生</button></div></div>
+            <div className="roster-layout"><section className="roster-card"><div className="roster-toolbar"><label><input type="checkbox" aria-label="全选筛选结果" checked={visibleStudents.length > 0 && visibleStudents.every((student) => rosterChecked.includes(student.id))} onChange={(e) => setRosterChecked(e.target.checked ? Array.from(new Set([...rosterChecked, ...visibleStudents.map((student) => student.id)])) : rosterChecked.filter((sid) => !visibleStudents.some((student) => student.id === sid)))} /> 全选当前列表</label><span>已选 {rosterChecked.length} 人</span><button className="button mini danger" disabled={!rosterChecked.length} onClick={() => removeStudents(rosterChecked)}>批量删除</button></div><div className="roster-table-head"><span>学生</span><span>积分</span><span>当前座位</span><span>排座规则</span><span>学生关系</span><span /></div><div className="roster-rows">{rosterSections.map((section) => <div className="roster-section" key={section.id}><div className="roster-section-head"><i style={{ background: section.color }} /><strong>{section.name}</strong><span>{section.students.length} 人 · {section.students.reduce((sum, student) => sum + (student.points ?? 0), 0)} 分</span><button className="button mini" onClick={() => setRosterChecked((before) => section.students.every((student) => before.includes(student.id)) ? before.filter((id) => !section.students.some((student) => student.id === id)) : Array.from(new Set([...before, ...section.students.map((student) => student.id)])))}>{section.students.every((student) => rosterChecked.includes(student.id)) ? "取消本组" : "选择本组"}</button></div>{section.students.map((student) => { const studentRules = active.filter((rule) => rule.studentId === student.id || rule.targetId === student.id); const needs = studentRules.filter((rule) => rule.type === "need"); const relations = studentRules.filter((rule) => rule.type === "relation"); const seat = seatsOf(c).find((item) => item.id === studentSeat(c.assignments, student.id)); const open = expandedStudent === student.id; return <div id={`roster-student-${student.id}`} className={`roster-row-wrap ${open ? "open" : ""}`} key={student.id}><div className="roster-row"><input type="checkbox" aria-label={`选择${student.name}`} checked={rosterChecked.includes(student.id)} onChange={(e) => setRosterChecked((before) => e.target.checked ? [...before, student.id] : before.filter((sid) => sid !== student.id))} /><button className="roster-person" draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", student.id)} onClick={() => { setExpandedStudent(open ? "" : student.id); if (!open) setRosterAside("trajectory"); }}><StudentAvatar student={student} /><span><b>{student.name}</b><small>{student.gender === "boy" ? "男生" : student.gender === "girl" ? "女生" : "性别未标注"}{student.number ? ` · 学号 ${student.number}` : ""}{student.groupId ? ` · ${c.groups?.find((group) => group.id === student.groupId)?.name ?? "未分组"}` : " · 未分组"}</small></span></button><div className="roster-score"><button aria-label={`${student.name}减 1 分`} onClick={() => void awardPoints(student.id, -1)}>−</button><strong>{student.points ?? 0}</strong><button aria-label={`${student.name}加 1 分`} onClick={() => void awardPoints(student.id, 1)}>+</button></div><span className="roster-seat">{seatLabel(seat)}</span><span className="roster-tags">{needs.length ? needs.map((rule) => <small key={rule.id} className={rule.priority}>{needText[rule.need ?? ""]}</small>) : <small>无座位要求</small>}</span><span className="roster-tags">{relations.length ? relations.map((rule) => <small key={rule.id} className={rule.priority}>{studentName(c, rule.studentId === student.id ? rule.targetId : rule.studentId)} · {relationText[rule.relation ?? ""]}</small>) : <small>无关系规则</small>}</span><button className="icon-button" aria-label={`展开${student.name}轨迹`} onClick={() => setExpandedStudent(open ? "" : student.id)}>{open ? <ChevronDown size={17} /> : <ChevronRight size={17} />}</button></div>{open && <div className="roster-expanded"><div><strong>座位轮换轨迹</strong><p>{c.versions.length ? "右侧教室图已标出历轮座位与移动方向。" : "发布第一轮座位后会记录轨迹。"}</p></div><div className="roster-timeline">{c.versions.map((version) => { const seatId = studentSeat(version.assignments, student.id); const oldClass = { ...c, layout: version.layout ?? c.layout }; const place = seatsOf(oldClass).find((item) => item.id === seatId); return <span key={version.id}>第 {version.round} 轮 · {dateText(versionDate(version))} · {seatLabel(place)}</span>; })}</div><div className="roster-point-detail"><div className="roster-point-head"><strong>积分 · {student.points ?? 0} 分</strong><span>最近 100 条记录</span></div><div className="roster-point-actions"><input aria-label={`${student.name}积分原因`} value={pointReason} maxLength={40} onChange={(event) => setPointReason(event.target.value)} placeholder="本次加减分原因（可选）" /><button className="button mini" onClick={() => void awardPoints(student.id, -1, pointReason)}>−1</button><button className="button mini" onClick={() => void awardPoints(student.id, 1, pointReason)}>+1</button><button className="button mini" onClick={() => void awardPoints(student.id, 5, pointReason)}>+5</button></div>{pointHistory.studentId === student.id && (pointHistory.loading ? <p>正在读取积分记录…</p> : pointHistory.error ? <p className="field-error">积分记录读取失败：{pointHistory.error}</p> : pointHistory.events.length ? <div className="roster-point-events">{pointHistory.events.map((event) => <div key={event.id}><time>{pointTime(event.at)}</time><strong className={event.delta >= 0 ? "positive" : "negative"}>{event.delta > 0 ? "+" : ""}{event.delta}</strong><span>{event.reason || "未填写原因"}</span></div>)}</div> : <p>暂无积分记录</p>)}</div><div className="student-appearance"><strong>学生标识</strong><label>性别<select aria-label={`${student.name}的性别`} value={student.gender ?? ""} onChange={(e) => commit((_, cl) => { const item = cl.students.find((entry) => entry.id === student.id); if (item) item.gender = (e.target.value || undefined) as Gender | undefined; })}><option value="">未标注</option><option value="boy">男生</option><option value="girl">女生</option></select></label><label className="student-glasses"><input type="checkbox" checked={!!student.glasses} disabled={!student.gender} onChange={(e) => commit((_, cl) => { const item = cl.students.find((entry) => entry.id === student.id); if (item) item.glasses = e.target.checked; })} /> 戴眼镜</label></div>{renderStudentRules(student)}<div className="roster-inline-actions"><button className="button mini" onClick={() => { setEditingStudent(student.id); setEditingName(student.name); }}>改名</button><button className="button mini" onClick={() => { setView("trajectory"); setTrajectoryStudent(student.id); }}>查看完整轨迹</button><button className="button mini danger" onClick={() => removeStudents([student.id])}>删除</button></div>{editingStudent === student.id && <div className="inline-input"><input value={editingName} onChange={(e) => setEditingName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") renameStudent(student.id); }} /><button className="button primary" onClick={() => renameStudent(student.id)}>保存姓名</button></div>}</div>}</div>; })}</div>)}{!visibleStudents.length && <p className="muted">没有找到学生，可从上方导入名单。</p>}</div></section><aside className="roster-side"><div className="roster-side-tabs"><button className={rosterAside === "groups" ? "active" : ""} onClick={() => setRosterAside("groups")}>小组管理</button><button className={rosterAside === "trajectory" ? "active" : ""} onClick={() => setRosterAside("trajectory")}>座位轨迹</button></div>{rosterAside === "groups" ? <RosterGroups klass={c} checked={rosterChecked} onClearChecked={() => setRosterChecked([])} onCreate={(name, studentIds) => { commit((_, cl) => { const group = freshGroup(cl, name); cl.groups = [...(cl.groups ?? []), group]; cl.seatingMode = "group"; for (const student of cl.students) if (studentIds.includes(student.id)) { const previous = cl.groups.find((item) => item.id === student.groupId); if (previous) previous.zone = []; student.groupId = group.id; } }); setToast(`已创建${name}`); }} onAssign={(studentIds, groupId) => groupId ? putInGroup(studentIds, groupId) : leaveGroup(studentIds)} onRename={(groupId, name) => commit((_, cl) => { const group = cl.groups?.find((item) => item.id === groupId); if (group) group.name = name; })} onDissolve={(groupId) => { const group = c.groups?.find((item) => item.id === groupId); if (!group || !window.confirm(`解散${group.name}？组内学生会变为未分组。`)) return; commit((_, cl) => { cl.groups = (cl.groups ?? []).filter((item) => item.id !== groupId); for (const student of cl.students) if (student.groupId === groupId) student.groupId = undefined; }); }} onInspect={focusRosterStudent} /> : <div className="roster-map"><div className="roster-map-head"><div><h2>{expandedStudent ? `${studentName(c, expandedStudent)}的座位轨迹` : "选择学生查看轨迹"}</h2><p>序号按发布时间排列，箭头指向下一轮。</p></div></div><div className="trajectory-filters"><label>显示<select value={trajectoryLimit} onChange={(e) => setTrajectoryLimit(e.target.value as "3" | "5" | "all")}><option value="3">最近 3 轮</option><option value="5">最近 5 轮</option><option value="all">全部轮次</option></select></label></div><SeatBoard c={c} assignments={c.assignments} trajectory={trajectoryPoints} focusStudentId={expandedStudent} selected={expandedStudent ? [expandedStudent] : []} readOnly /><p className="muted">历史教室中已移除的座位无法在当前教室图定位，仍可在左侧文字轨迹中查看。</p></div>}</aside></div>
           </> : view === "history" ? <>
             <div className="page-heading"><div><span className="eyebrow">版本管理</span><h1>历史座位对比</h1><p>左、右各选一个版本。蓝色桌椅表示学生的位置发生了变化；复制历史版只更新工作草稿，正式版不变。</p></div></div>
             <div className="history-toolbar"><label>左侧版本<select aria-label="左侧版本" value={historyOptions.some((option) => option.value === historyLeft) ? historyLeft : "draft"} onChange={(e) => setHistoryLeft(e.target.value)}>{historyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><button className="button outline" onClick={() => { setHistoryLeft(historyRight); setHistoryRight(historyLeft); }}><ArrowDownUp size={15} /> 交换左右</button><label>右侧版本<select aria-label="右侧版本" value={historyOptions.some((option) => option.value === historyRight) ? historyRight : "draft"} onChange={(e) => setHistoryRight(e.target.value)}>{historyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label></div>
@@ -2510,7 +2594,7 @@ export default function App({ initial }: { initial: ProjectData }) {
           title={pinAsk === "set" ? "设置 PIN" : pinAsk === "change" ? "修改 PIN" : "进入管理"}
           confirmNew={pinAsk !== "verify"}
           askCurrent={pinAsk === "change"}
-          onClose={() => setPinAsk("")}
+          onClose={() => { pendingManageAction.current = null; setPinAsk(""); }}
           onSubmit={async (pin, currentPin) => {
             try {
               if (pinAsk === "set") await setPin(pin);
@@ -2518,9 +2602,14 @@ export default function App({ initial }: { initial: ProjectData }) {
               else if (!(await verifyPin(pin))) return "PIN 不正确";
               if (pinAsk !== "change") {
                 setManaged(true);
-                setView("classroom");
-                setPanel("none");
-                setLayoutMode(false);
+                const action = pendingManageAction.current;
+                pendingManageAction.current = null;
+                if (action) action();
+                else {
+                  setView("classroom");
+                  setPanel("none");
+                  setLayoutMode(false);
+                }
               }
               setPinAsk("");
               return "";
@@ -2553,7 +2642,9 @@ export default function App({ initial }: { initial: ProjectData }) {
         >
           <section
             className={`drawer ${panel === "generate" ? "wide" : ""} ${previewingProposal ? "results" : ""}`}
-            aria-label="操作面板"
+            role="dialog"
+            aria-modal="true"
+            aria-label="操作弹窗"
           >
             <div className="drawer-header">
               <div>

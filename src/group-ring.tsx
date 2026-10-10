@@ -1,5 +1,6 @@
 import { RefObject, useLayoutEffect, useState } from "react";
 import { groupClusters } from "./groups";
+import { groupOutlinePath, type OutlineBox } from "./group-outline";
 import { Assignment, ClassData } from "./model";
 import { seatsOf, studentSeat } from "./seating";
 
@@ -9,6 +10,8 @@ export type GroupRing = {
   color: string;
   groupId: string;
   studentIds: string[];
+  boxes: OutlineBox[];
+  path: string;
   x: number;
   y: number;
   w: number;
@@ -80,6 +83,8 @@ export function GroupRings({
           color: soften(group?.color ?? "#7ea2d4"),
           groupId: cluster.groupId,
           studentIds: cluster.studentIds,
+          boxes: frames,
+          path: groupOutlinePath(frames, pad),
           x: left,
           y: top,
           w: Math.max(12, right - left),
@@ -103,16 +108,21 @@ export function GroupRings({
     <>
       <svg className="group-rings" aria-hidden="true">
         {rings.map((ring) => (
-          <rect
-            key={ring.key}
-            x={ring.x}
-            y={ring.y}
-            width={ring.w}
-            height={ring.h}
-            rx={Math.min(36, ring.w / 2, ring.h / 2)}
-            fill={ring.color.replace("rgb", "rgba").replace(")", " / 0.16)")}
-            stroke={ring.color}
-          />
+          <g key={ring.key}>
+            {ring.boxes.map((box, index) => (
+              <rect
+                key={index}
+                x={box.x - 7}
+                y={box.y - 7}
+                width={box.w + 14}
+                height={box.h + 14}
+                rx={10}
+                fill={ring.color}
+                fillOpacity={0.16}
+              />
+            ))}
+            <path d={ring.path} fill="none" stroke={ring.color} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+          </g>
         ))}
       </svg>
       {interactive &&

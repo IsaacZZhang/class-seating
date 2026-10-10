@@ -2647,22 +2647,17 @@ a {
 .gate-card h1 { margin-bottom: 0; }
 .gate-card p { color: #5d6b7a; }
 .gate-card label, .teacher-dock input, .roster-card > input { display: grid; gap: 6px; font-size: 13px; font-weight: 650; }
-.gate-card input, .teacher-dock input, .group-row input, .roster-card > input { width: 100%; border: 1px solid #d5deea; border-radius: 8px; padding: 10px 12px; background: #fff; }
+.gate-card input, .teacher-dock input, .roster-card > input { width: 100%; border: 1px solid #d5deea; border-radius: 8px; padding: 10px 12px; background: #fff; }
 .gate-switch { display: flex; gap: 8px; }
 .gate-switch button { flex: 1; border: 1px solid #d5deea; background: #fff; border-radius: 8px; padding: 8px 10px; }
 .gate-switch button.active { background: #2661df; color: #fff; border-color: #2661df; }
-.manage-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-.group-row, .member-row, .point-list > div, .turn-list > div { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
-.member-row { justify-content: space-between; }
-.member-row select { min-width: 140px; }
-.group-row i, .legend-dot, .group-legend i, .turn-list i { width: 12px; height: 12px; border-radius: 99px; display: inline-block; flex: 0 0 auto; }
+.point-list > div, .turn-list > div { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.legend-dot, .group-legend i, .turn-list i { width: 12px; height: 12px; border-radius: 99px; display: inline-block; flex: 0 0 auto; }
 .group-legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 10px; }
 .group-legend span { display: inline-flex; align-items: center; gap: 6px; font-weight: 650; }
 .point-list { max-height: 460px; overflow: auto; }
 .point-list span { flex: 1; }
 .point-list small { margin-left: 8px; color: #8a5a12; font-weight: 700; }
-.display-link { margin-top: 22px; }
-.display-link code { display: block; margin: 8px 0; padding: 8px 10px; overflow-wrap: anywhere; border-radius: 8px; background: #f4f7fb; }
 .pin-layer { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 20px; background: rgba(31, 44, 60, 0.72); }
 .teacher-dock { display: grid; gap: 8px; margin-top: 16px; }
 .turn-list { margin-top: 14px; }
@@ -3052,3 +3047,212 @@ a {
   pointer-events: none;
 }
 .classroom.marquee-active { user-select: none; }
+
+/* The everyday seat page uses the same card layout as the other workspaces. */
+.workspace-classroom .workspace-grid {
+  height: auto;
+  min-height: 0;
+}
+.workspace-classroom .classroom {
+  width: min(100%, 940px);
+  max-width: 940px;
+  min-height: 0;
+  height: auto;
+  aspect-ratio: 1.2;
+  flex: 0 0 auto;
+  margin: 0 auto;
+}
+.workspace-classroom .seat-dock {
+  position: static;
+  transform: none;
+  flex-wrap: wrap;
+  max-width: 100%;
+  margin-top: 10px;
+  box-shadow: none;
+}
+.unseat-drop-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 4px 10px;
+  padding: 9px 10px;
+  border: 1px dashed #cad6e5;
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #63758e;
+  font-size: 11px;
+}
+.unseat-drop-zone span { font-weight: 750; }
+.unseat-drop-zone small { font-size: 10px; line-height: 1.4; }
+.unseat-drop-zone.ready { border-color: #4d80d8; background: #edf4ff; color: #2456a9; }
+.unseat-drop-zone.ready:hover { border-style: solid; }
+@media (max-width: 680px) {
+  .workspace-classroom .classroom {
+    width: 100%;
+    max-width: 100%;
+    height: min(500px, 70dvh);
+    min-height: 360px;
+    aspect-ratio: auto;
+  }
+}
+
+.workspace-classroom .board-column.view-locked,
+.workspace-classroom .classroom.stage-locked {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Seat workspace: give the classroom the available width without stretching its card. */
+.workspace-classroom { max-width: 1800px; padding: 14px 20px 18px; }
+.workspace-classroom .workspace-grid {
+  height: auto;
+  min-height: 0;
+  grid-template-columns: minmax(150px, 170px) minmax(0, 1fr) minmax(190px, 215px);
+  gap: 12px;
+  align-items: start;
+}
+.workspace-classroom .board-column { align-self: start; }
+.workspace-classroom .classroom {
+  width: min(100%, calc((100dvh - 200px) * 1.2));
+  max-width: none;
+  min-height: 0;
+  height: auto;
+  aspect-ratio: 1.2;
+  flex: 0 0 auto;
+  margin-inline: auto;
+}
+.workspace-classroom .student-list { max-height: calc(100dvh - 220px); }
+.workspace-classroom .insights { top: 74px; max-height: calc(100dvh - 90px); overflow-y: auto; }
+
+/* Navigation and the compact class status share the header. */
+.topbar { gap: 10px; }
+.topbar .class-selector { min-width: 110px; width: max-content; max-width: 160px; padding: 0 4px 0 10px; border-left: 3px solid #2861db; }
+.topbar .class-selector select { font-size: 16px; padding-right: 18px; }
+.bar-nav { gap: 2px; padding: 3px; border-radius: 10px; background: #f4f6fa; }
+.topbar .bar-nav .button { border: 0; background: transparent; box-shadow: none; color: #68778d; padding: 7px 10px; font-weight: 650; }
+.topbar .bar-nav .button:hover:not(:disabled):not(.primary):not(.active) { border: 0; background: #eaf0fa; color: #244c86; transform: none; }
+.topbar .bar-nav .button.active { border: 0; background: #fff; color: #2256b0; box-shadow: 0 1px 5px #24426824; }
+.topbar-context { display: flex; align-items: center; gap: 9px; white-space: nowrap; font-size: 11px; color: #78889b; }
+.topbar-context strong { font-size: 12px; color: #36516f; }
+.topbar-context span + span { padding-left: 9px; border-left: 1px solid #dce4ef; }
+.topbar-context .draft-pending { color: #b67324; font-weight: 700; }
+.topbar-classroom-actions { display: flex; align-items: center; gap: 2px; padding: 0 4px; border-left: 1px solid #e0e6ee; }
+.topbar-classroom-actions button { width: 31px; height: 31px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #647793; }
+.topbar-classroom-actions button:hover:not(:disabled) { background: #edf4ff; color: #2861db; }
+.topbar-classroom-actions button:disabled { opacity: .4; }
+
+/* Group editing lives beside the roster, with the trajectory one tab away. */
+.roster-side { min-width: 0; position: sticky; top: 74px; background: #fff; border: 1px solid #e6eaf0; border-radius: 15px; box-shadow: 0 5px 28px #26416808; overflow: hidden; max-height: calc(100dvh - 90px); display: flex; flex-direction: column; }
+.roster-side-tabs { display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid #e6eaf0; flex: none; }
+.roster-side-tabs button { flex: 1; border: 0; border-radius: 7px; background: transparent; color: #7d8da0; padding: 9px; font-weight: 700; font-size: 12px; }
+.roster-side-tabs button.active { background: #eaf2ff; color: #225bc5; }
+.roster-side > .roster-map { position: static; box-shadow: none; border: 0; overflow: auto; }
+.roster-groups { padding: 15px; overflow: auto; min-height: 0; scrollbar-width: thin; }
+.roster-groups-intro h2 { font-size: 16px; margin: 0 0 5px; }
+.roster-groups-intro p { color: #8695a8; font-size: 11px; line-height: 1.5; margin: 0 0 14px; }
+.roster-group-create { display: flex; gap: 7px; }
+.roster-group-create input, .roster-group-head input { min-width: 0; border: 1px solid #dce5ef; border-radius: 7px; background: #fff; padding: 7px 8px; color: #2c405a; }
+.roster-group-create input { flex: 1; font-size: 12px; }
+.roster-groups-summary { display: flex; align-items: center; gap: 5px; color: #788aa1; font-size: 11px; margin: 14px 0 10px; }
+.roster-groups-summary strong { color: #245cc4; }
+.roster-group-list { display: grid; gap: 9px; }
+.roster-group-card { border: 1px solid #e5ebf3; border-top: 3px solid; border-radius: 10px; padding: 10px; background: #fcfdff; }
+.roster-group-card.drag-over, .roster-ungrouped.drag-over { outline: 2px dashed #4b80de; background: #eff5ff; }
+.roster-group-head { display: flex; align-items: center; gap: 5px; }
+.roster-group-head i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.roster-group-head input { flex: 1; border-color: transparent; background: transparent; font-weight: 800; font-size: 12px; }
+.roster-group-head input:hover, .roster-group-head input:focus { border-color: #cbdcf4; background: #fff; }
+.roster-group-head span { color: #8493a5; font-size: 10px; white-space: nowrap; }
+.roster-group-head .icon-button { width: 27px; height: 27px; }
+.roster-group-members { display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 0; }
+.roster-group-members > p { color: #9aa8b9; font-size: 10px; margin: 3px 0 5px; }
+.roster-group-member { display: inline-flex; align-items: center; gap: 3px; border: 1px solid #e1e8f2; border-radius: 7px; background: #fff; padding: 3px 4px; font-size: 10px; cursor: grab; }
+.roster-group-member .member-name { font-weight: 700; color: #345476; }
+.roster-group-member span { color: #8a98a9; }
+.roster-group-member button { border: 0; background: transparent; color: #667b96; padding: 2px; line-height: 1; }
+.roster-group-member button:hover { color: #1c5bc7; }
+.roster-group-add { width: 100%; }
+.roster-ungrouped, .roster-display-link { margin-top: 12px; border: 1px dashed #d7e0ec; border-radius: 9px; padding: 11px; }
+.roster-ungrouped > div { display: flex; justify-content: space-between; gap: 8px; color: #405573; font-size: 11px; }
+.roster-ungrouped > div span { color: #8b9aad; }
+.roster-ungrouped p, .roster-display-link p { color: #8796a9; font-size: 10px; line-height: 1.6; margin: 7px 0; }
+.roster-display-link { border-style: solid; }
+.roster-display-link strong { color: #405573; font-size: 11px; }
+@media (max-width: 1250px) { .roster-side { position: static; max-height: none; } .roster-groups { max-height: 70dvh; } }
+@media (max-width: 1000px) {
+  .workspace-classroom .workspace-grid { grid-template-columns: 1fr; }
+  .workspace-classroom .classroom { width: 100%; max-width: 100%; }
+  .workspace-classroom .insights { max-height: none; overflow: visible; }
+}
+@media (max-width: 680px) {
+  .topbar-context { flex-wrap: wrap; white-space: normal; gap: 3px 7px; }
+  .workspace-classroom { padding: 10px; }
+  .workspace-classroom .classroom { width: 100%; height: min(500px, 70dvh); min-height: 360px; aspect-ratio: auto; }
+  .roster-group-create { flex-wrap: wrap; }
+  .roster-group-create input { flex-basis: 100%; }
+}
+
+/* Keep the student footer level with the classroom and use the right column for actions. */
+@media (min-width: 1001px) {
+  .workspace-classroom .student-column,
+  .workspace-classroom .insights { height: calc(100dvh - 230px); min-height: 620px; }
+  .workspace-classroom .student-list { max-height: none; min-height: 0; }
+  .workspace-classroom .insights { display: flex; flex-direction: column; }
+  .workspace-classroom .insights .bottom-actions { grid-template-columns: 1fr; gap: 7px; margin-top: auto; padding-top: 13px; border-top: 1px solid #e8edf3; }
+  .workspace-classroom .insights .button.large { height: 55px; }
+}
+@media (max-width: 1000px) {
+  .workspace-classroom .insights .bottom-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .workspace-classroom .insights .bottom-actions { grid-template-columns: 1fr; }
+}
+
+/* All operation panels appear as centered dialogs. */
+.panel-scrim,
+.panel-scrim.preview-scrim { z-index: 35; align-items: center; justify-content: center; padding: 20px; background: #16263d80; }
+.panel-scrim .drawer {
+  width: min(640px, 100%);
+  height: auto;
+  max-height: calc(100dvh - 40px);
+  border: 1px solid #e4eaf2;
+  border-radius: 16px;
+  box-shadow: 0 24px 80px #14294345;
+  overflow: hidden;
+  animation: dialog-in .18s ease-out;
+}
+.panel-scrim .drawer.wide { width: min(850px, 100%); }
+.panel-scrim .drawer.results { width: min(1340px, 100%); height: min(940px, calc(100dvh - 40px)); }
+.panel-scrim .drawer-body { min-height: 0; }
+@keyframes dialog-in { from { transform: translateY(10px) scale(.985); opacity: .6; } to { transform: none; opacity: 1; } }
+@media (max-width: 680px) { .panel-scrim { padding: 10px; } .panel-scrim .drawer { max-height: calc(100dvh - 20px); } }
+
+/* Grouped roster and scoring controls. */
+.roster-table-head, .roster-row { grid-template-columns: 22px minmax(125px, 1.1fr) 94px minmax(85px, .85fr) minmax(90px, 1fr) minmax(100px, 1.1fr) 28px; }
+.roster-table-head span:first-child { grid-column: 2; }
+.roster-section-head { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: #f0f4fa; border-top: 1px solid #e4ebf3; color: #344b68; font-size: 11px; }
+.roster-section-head i { width: 9px; height: 9px; border-radius: 50%; }
+.roster-section-head span { margin-left: auto; color: #7c8ca0; }
+.roster-row-wrap { scroll-margin-block: 90px; }
+.roster-row-wrap.open { box-shadow: inset 3px 0 #3e78de; }
+.roster-score { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.roster-score strong { min-width: 20px; text-align: center; color: #9a681d; }
+.roster-score button { width: 24px; height: 24px; border: 1px solid #dce5ef; border-radius: 6px; background: #fff; color: #44648d; font-size: 14px; line-height: 1; }
+.roster-score button:hover { border-color: #87a8e9; background: #eef5ff; }
+.roster-point-detail { margin: 12px 0; padding: 12px; border: 1px solid #e2e9f3; border-radius: 9px; background: #fff; }
+.roster-point-head { display: flex; justify-content: space-between; gap: 10px; color: #8494a8; font-size: 10px; }
+.roster-point-actions { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }
+.roster-point-actions input { flex: 1; min-width: 160px; padding: 7px 9px; border: 1px solid #dbe4ef; border-radius: 7px; font-size: 11px; }
+.roster-point-events { max-height: 180px; overflow: auto; border-top: 1px solid #e8edf3; }
+.roster-point-events > div { display: grid; grid-template-columns: 85px 36px minmax(0, 1fr); gap: 8px; padding: 8px 3px; border-bottom: 1px solid #eef1f5; font-size: 10px; }
+.roster-point-events time { color: #8796a8; }
+.roster-point-events .positive { color: #24815a; }
+.roster-point-events .negative { color: #bf514c; }
+.roster-group-member .member-name { text-decoration: underline; text-decoration-color: #bdd0ec; text-underline-offset: 2px; }
+@media (max-width: 700px) {
+  .roster-row { grid-template-columns: 22px minmax(0, 1fr) 26px; }
+  .roster-score { grid-column: 2; grid-row: 2; }
+  .roster-seat { grid-column: 2; grid-row: 3; }
+  .roster-row > .roster-tags:nth-of-type(2) { grid-column: 2; grid-row: 4; }
+  .roster-row > .roster-tags:nth-of-type(3) { grid-column: 2; grid-row: 5; }
+}

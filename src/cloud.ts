@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { Assignment, ClassData, Layout, ProjectData, Student, StudyGroup } from "./model";
+import { repairGroupIds } from "./sync-ids";
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -131,11 +132,12 @@ export async function pushProject(data: ProjectData): Promise<true | string> {
   const { data: userData, error: userError } = await supabase.auth.getUser();
   if (userError || !userData.user) return userError?.message ?? "未登录";
   const teacherId = userData.user.id;
-  localStorage.setItem(activeKey, data.activeClassId);
-  const classIds = data.classes.map((item) => item.id);
-  const saved = await supabase.from("classes").upsert(data.classes.map((item) => classPayload(item, teacherId)));
+  const ready = repairGroupIds(data);
+  localStorage.setItem(activeKey, ready.activeClassId);
+  const classIds = ready.classes.map((item) => item.id);
+  const saved = await supabase.from("classes").upsert(ready.classes.map((item) => classPayload(item, teacherId)));
   if (saved.error) return saved.error.message;
-  const groupRows = data.classes.flatMap((item) =>
+  const groupRows = ready.classes.flatMap((item) =>
     (item.groups ?? []).map((group: StudyGroup) => ({
       id: group.id,
       class_id: item.id,
@@ -148,7 +150,7 @@ export async function pushProject(data: ProjectData): Promise<true | string> {
     const wrote = await supabase.from("groups").upsert(groupRows);
     if (wrote.error) return wrote.error.message;
   }
-  const studentRows = data.classes.flatMap((item) =>
+  const studentRows = ready.classes.flatMap((item) =>
     item.students.map((student) => ({
       id: student.id,
       class_id: item.id,
@@ -193,6 +195,19 @@ export async function addPoints(studentId: string, delta: number, reason?: strin
   });
   if (error) throw new Error(error.message);
   return data as number;
+}
+
+export type PointEvent = { id: string; delta: number; reason: string; at: string };
+
+export async function getPointHistory(studentId: string): Promise<PointEvent[]> {
+  const { data, error } = await supabase.from("point_events").select("id,delta,reason,created_at").eq("student_id", studentId).order("created_at", { ascending: false }).limit(100);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => ({
+    id: String(row.id),
+    delta: Number(row.delta ?? 0),
+    reason: String(row.reason ?? ""),
+    at: String(row.created_at ?? ""),
+  }));
 }
 
 export async function pinStatus() {
