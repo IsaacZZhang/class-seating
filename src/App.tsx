@@ -89,11 +89,11 @@ import { freshGroup, moveFormation } from "./groups";
 import { AccountMenu } from "./account";
 import { PinDialog } from "./meeting";
 import { RosterGroups } from "./roster-groups";
-import boyAvatar from "../ui/png/男生无眼镜.png";
-import boyGlassesAvatar from "../ui/png/男生戴眼镜.png";
-import girlAvatar from "../ui/png/女生无眼镜.png";
-import girlGlassesAvatar from "../ui/png/女生戴眼镜.png";
-import deskIllustration from "../ui/assert/ChatGPT 图像 2026年9月27日 21_58_52-3.png";
+import boyAvatar from "../ui/webp/boy.webp";
+import boyGlassesAvatar from "../ui/webp/boy-glasses.webp";
+import girlAvatar from "../ui/webp/girl.webp";
+import girlGlassesAvatar from "../ui/webp/girl-glasses.webp";
+import deskIllustration from "../ui/webp/desk-illustration.webp";
 
 type Panel =
   | "none"
@@ -164,7 +164,7 @@ function StudentAvatar({ student }: { student: Student }) {
       ? student.glasses ? girlGlassesAvatar : girlAvatar
       : undefined;
   return <span className={`avatar student-avatar ${student.gender ?? "unknown"}`}>
-    {source ? <img src={source} alt={student.gender === "boy" ? "男生" : "女生"} /> : student.name.slice(0, 1)}
+    {source ? <img src={source} alt={student.gender === "boy" ? "男生" : "女生"} width={128} height={128} decoding="async" /> : student.name.slice(0, 1)}
   </span>;
 }
 const clone = <T,>(v: T): T => structuredClone(v);
@@ -2535,7 +2535,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
                       {Math.max(...Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length))} 组桌最多
                     </p>
                   </div>
-                  <div className="insight-art"><img src={deskIllustration} alt="书桌与小黑板插画" loading="lazy" /><span>每一次调整，都有迹可循</span></div>
+                  <div className="insight-art"><img src={deskIllustration} alt="书桌与小黑板插画" width={640} height={853} loading="lazy" decoding="async" /><span>每一次调整，都有迹可循</span></div>
                 </>
               )}
           <div className="bottom-actions">

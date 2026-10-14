@@ -1,9 +1,9 @@
 import { useRef, type CSSProperties } from "react";
 import { GroupRings } from "./group-ring";
-import boyAvatar from "../ui/png/男生无眼镜.png";
-import boyGlassesAvatar from "../ui/png/男生戴眼镜.png";
-import girlAvatar from "../ui/png/女生无眼镜.png";
-import girlGlassesAvatar from "../ui/png/女生戴眼镜.png";
+import boyAvatar from "../ui/webp/boy.webp";
+import boyGlassesAvatar from "../ui/webp/boy-glasses.webp";
+import girlAvatar from "../ui/webp/girl.webp";
+import girlGlassesAvatar from "../ui/webp/girl-glasses.webp";
 import { Assignment, ClassData, Student } from "./model";
 import { rowPattern, seatsOf } from "./seating";
 
@@ -85,7 +85,7 @@ export function ClassMap({
                       >
                         {avatar && (
                           <span className="avatar student-avatar">
-                            <img src={avatar} alt="" />
+                            <img src={avatar} alt="" width={128} height={128} decoding="async" />
                           </span>
                         )}
                         <span className="seat-name">{student?.name ?? "空位"}</span>

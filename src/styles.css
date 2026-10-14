@@ -2482,7 +2482,7 @@ a {
   aspect-ratio: 1.04;
   min-height: 540px;
   padding: 0;
-  background: #ede6db url("../ui/png/教室底图.png") center / 100% 100% no-repeat;
+  background: #ede6db url("../ui/webp/classroom.webp") center / 100% 100% no-repeat;
   border: 1px solid #c9d4df;
   box-shadow: inset 0 0 0 3px #ffffff80;
   overflow: hidden;
@@ -2500,11 +2500,11 @@ a {
 .classroom .desk { padding: 0; gap: 0; align-items: center; justify-content: center; height: 100%; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
 .classroom .seat {
   display: block; flex: 0 0 auto; width: min(50%, calc(100cqh * var(--row-seat-ratio))); height: auto; aspect-ratio: 1; min-height: 0; padding: 0; border: 0;
-  border-radius: 0; box-shadow: none; background: url("../ui/png/座位.png") center / contain no-repeat;
+  border-radius: 0; box-shadow: none; background: url("../ui/webp/seat.webp") center / contain no-repeat;
   color: #3a3e44; isolation: isolate; overflow: visible; container-type: inline-size;
 }
 .classroom .seat:hover:not(:disabled), .classroom .seat.drop-candidate:hover:not(.disabled) {
-  border: 0; background: url("../ui/png/座位.png") center / contain no-repeat;
+  border: 0; background: url("../ui/webp/seat.webp") center / contain no-repeat;
   filter: drop-shadow(0 0 5px #3b78e0); box-shadow: none; transform: translateY(-2px);
 }
 .classroom .seat:focus-visible { outline: 3px solid #2c69df; outline-offset: -5px; border-radius: 18px; }
@@ -2512,16 +2512,16 @@ a {
 .classroom .seat > .student-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .classroom .seat-name { position: absolute; top: 36%; left: 34%; width: 51%; max-width: none; transform: scale(var(--seat-zoom)); transform-origin: left center; font-size: clamp(7px, 16cqw, 12px); line-height: 1.1; color: #3d4148; text-shadow: 0 1px #fff; }
 .classroom .seat.empty .seat-name, .classroom .seat.disabled .seat-disabled-mark { left: 27%; width: 48%; top: 35%; color: #7e807c; }
-.classroom .seat.empty { opacity: .62; border: 0; background: url("../ui/png/座位.png") center / contain no-repeat; }
-.classroom .seat.disabled { opacity: .34; filter: grayscale(1); border: 0; background: url("../ui/png/座位.png") center / contain no-repeat; }
-.classroom-layout .seat.empty:not(.disabled) { border: 0; background: url("../ui/png/座位.png") center / contain no-repeat; filter: drop-shadow(0 0 3px #49a36b); }
-.classroom .seat-selected, .classroom .seat.selected, .classroom .seat.match { border: 0; background: url("../ui/png/座位.png") center / contain no-repeat; filter: drop-shadow(0 0 5px #316deb); box-shadow: none; }
-.classroom .seat.conflict:not(.selected) { border: 0; background: url("../ui/png/座位.png") center / contain no-repeat; filter: drop-shadow(0 0 5px #df6658); }
-.classroom .seat.warning:not(.selected):not(.conflict), .classroom .seat.proposal-changed:not(.selected) { border: 0; background: url("../ui/png/座位.png") center / contain no-repeat; filter: drop-shadow(0 0 5px #ee9b3c); }
+.classroom .seat.empty { opacity: .62; border: 0; background: url("../ui/webp/seat.webp") center / contain no-repeat; }
+.classroom .seat.disabled { opacity: .34; filter: grayscale(1); border: 0; background: url("../ui/webp/seat.webp") center / contain no-repeat; }
+.classroom-layout .seat.empty:not(.disabled) { border: 0; background: url("../ui/webp/seat.webp") center / contain no-repeat; filter: drop-shadow(0 0 3px #49a36b); }
+.classroom .seat-selected, .classroom .seat.selected, .classroom .seat.match { border: 0; background: url("../ui/webp/seat.webp") center / contain no-repeat; filter: drop-shadow(0 0 5px #316deb); box-shadow: none; }
+.classroom .seat.conflict:not(.selected) { border: 0; background: url("../ui/webp/seat.webp") center / contain no-repeat; filter: drop-shadow(0 0 5px #df6658); }
+.classroom .seat.warning:not(.selected):not(.conflict), .classroom .seat.proposal-changed:not(.selected) { border: 0; background: url("../ui/webp/seat.webp") center / contain no-repeat; filter: drop-shadow(0 0 5px #ee9b3c); }
 .classroom .seat-symbols { top: 14%; right: 7%; border-radius: 8px; padding: 1px 2px; background: #fffcf5e8; }
 .classroom .seat-old { bottom: -4px; z-index: 3; }
 .classroom .seat.dim { opacity: .36; }
-.classroom .seat.drop-candidate:not(.disabled) { border: 0; background: url("../ui/png/座位.png") center / contain no-repeat; filter: drop-shadow(0 0 4px #2c69df); }
+.classroom .seat.drop-candidate:not(.disabled) { border: 0; background: url("../ui/webp/seat.webp") center / contain no-repeat; filter: drop-shadow(0 0 4px #2c69df); }
 .classroom .classroom-back { flex: 0 0 10%; padding: 0 8%; border: 0; background: transparent; color: #516276; }
 .classroom .classroom-back span { display: none; }
 .trajectory-arrows { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; overflow: visible; pointer-events: none; }
@@ -2556,13 +2556,13 @@ a {
 @media (min-width: 1001px) { .workspace-classroom .workspace-grid { height: calc(100vh - 245px); min-height: 650px; } }
 .workspace-classroom .classroom { width: 100%; max-width: min(100%, clamp(650px, calc(120vh - 430px), 940px)); aspect-ratio: 1.2; min-height: 540px; flex: 0 0 auto; margin: 0 auto; }
 .classroom .seat-hidden { flex: 0 0 auto; width: min(50%, calc(100cqh * var(--row-seat-ratio))); aspect-ratio: 1; }
-.classroom .seat.locked:not(.selected) { background: url("../ui/png/座位.png") center / contain no-repeat; border: 0; box-shadow: none; }
-.classroom .seat.changed:not(.selected), .classroom .seat.proposal-changed:not(.selected) { background: url("../ui/png/座位.png") center / contain no-repeat; border: 0; box-shadow: none; }
+.classroom .seat.locked:not(.selected) { background: url("../ui/webp/seat.webp") center / contain no-repeat; border: 0; box-shadow: none; }
+.classroom .seat.changed:not(.selected), .classroom .seat.proposal-changed:not(.selected) { background: url("../ui/webp/seat.webp") center / contain no-repeat; border: 0; box-shadow: none; }
 .classroom .seat.changed::before {
   content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background: #1169d3; opacity: .58;
-  -webkit-mask: url("../ui/png/座位.png") center / contain no-repeat;
-  mask: url("../ui/png/座位.png") center / contain no-repeat;
+  -webkit-mask: url("../ui/webp/seat.webp") center / contain no-repeat;
+  mask: url("../ui/webp/seat.webp") center / contain no-repeat;
 }
 .classroom .seat.changed { filter: drop-shadow(0 0 5px #1557bd); }
 .classroom .seat.changed:hover:not(:disabled) { filter: drop-shadow(0 0 7px #1557bd); }
@@ -2666,7 +2666,7 @@ a {
 @media (max-width: 680px) {
   .workspace-classroom .classroom { max-width: 100%; aspect-ratio: auto; min-height: 540px; height: 540px; }
 }
-.projection .classroom { background: #ede6db url("../ui/png/教室底图.png") center / 100% 100% no-repeat; }
+.projection .classroom { background: #ede6db url("../ui/webp/classroom.webp") center / 100% 100% no-repeat; }
 .projection .classroom .seat-name { font-size: clamp(10px, 1.25vw, 20px); }
 
 /* Keep the classroom controls in reach while the page scrolls. */

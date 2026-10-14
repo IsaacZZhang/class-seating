@@ -6,6 +6,7 @@ import { isExistingSignup, passwordChecks, passwordStrength } from "./auth-flow"
 import { pullProject, supabase } from "./cloud";
 import { ProjectData } from "./model";
 import { makeEmptyClass } from "./seating";
+import authClassroom from "../ui/webp/auth-classroom.webp";
 
 function Boot({ label }: { label: string }) {
   return (
@@ -188,7 +189,7 @@ function AuthScreen({ recovery = false, onRecoveryDone }: { recovery?: boolean; 
           </div>
         </section>
         <aside className="auth-visual" aria-label="教师在教室中规划班级安排">
-          <img src="/auth-classroom.webp" alt="教师在教室里整理座位安排与教学资料" />
+          <img src={authClassroom} alt="教师在教室里整理座位安排与教学资料" width={1122} height={1402} loading="lazy" decoding="async" />
         </aside>
       </div>
     </main>

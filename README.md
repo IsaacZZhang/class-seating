@@ -26,6 +26,14 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_你的密钥
 
 构建命令设为 `npm run build`，部署命令设为 `npx wrangler deploy`，根目录使用仓库根目录。保存变量后重新运行构建并部署；已生成的静态文件不会因为修改变量而自动更新。本地开发继续使用被 Git 忽略的 `.env.local`。这里只能使用 Supabase 的 **publishable key**，不要填写 secret key 或 `service_role` key。浏览器会看到 publishable key，因此 Supabase 数据表仍须配置合适的 RLS 策略。
 
+## 图片加载优化
+
+页面使用 `ui/webp/` 中的优化图片：学生头像为 128×128，座位图为 384×384，教室底图保留 1254×1254，侧栏插画为 640×853。原始 PNG 保留在 `ui/png/` 和 `ui/assert/`，更换素材时请先按显示尺寸导出 WebP，避免重新引用大图。
+
+图片通过 Vite 导入，构建后生成带内容指纹的 `/assets/` 地址。`public/_headers` 会复制到 `dist/_headers`，让 Cloudflare 为这些资源设置 `Cache-Control: public, max-age=31536000, immutable`；素材变化会产生新地址。HTML 继续使用 Cloudflare 默认的重新验证策略，便于及时获取新版本。登录页插画也使用指纹地址，并延迟加载，手机布局隐藏插画时无需下载。
+
+修改后需要重新构建、部署才会在线上生效。可在浏览器开发者工具的 Network 中确认图片为 WebP、响应包含上述缓存头，重复访问时使用浏览器缓存。检查缓存时不要勾选 Disable cache。
+
 ## 使用流程
 
 ### 1. 建立班级和教室
