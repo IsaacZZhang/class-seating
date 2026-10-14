@@ -17,7 +17,11 @@ export function rowPattern(layout: Layout, row: number): number[] {
   return layout.rowPatterns?.[row] ?? Array(layout.desks).fill(2);
 }
 export function seatsOf(c: ClassData): Seat[] {
-  const seats: Seat[] = [];
+  const seats: Seat[] = (["left", "right"] as const)
+    .filter((side) => c.layout.podiumSeats?.includes(side) && !c.layout.disabled.includes(`podium-${side}`))
+    .map((side) => ({ id: `podium-${side}`, row: -1, desk: side === "left" ? -1 : c.layout.desks,
+      side: 0, col: side === "left" ? 0 : Math.max(...Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).reduce((sum, capacity) => sum + capacity, 0))) - 1,
+      capacity: 1, podiumSide: side }));
   for (let row = 0; row < c.layout.rows; row++) {
     const pattern = rowPattern(c.layout, row);
     let col = 0;
@@ -48,7 +52,7 @@ export function sideText(capacity: number | undefined, side: number) {
 }
 export const seatLabel = (seat?: Seat) =>
   seat
-    ? `第 ${seat.row + 1} 排 · 第 ${seat.desk + 1} 组${sideText(seat.capacity, seat.side)}`
+    ? seat.podiumSide ? `讲台${seat.podiumSide === "left" ? "左" : "右"}侧 · 值日班长` : `第 ${seat.row + 1} 排 · 第 ${seat.desk + 1} 组${sideText(seat.capacity, seat.side)}`
     : "未安排";
 export const studentName = (c: ClassData, studentId?: string) =>
   !studentId
@@ -108,6 +112,11 @@ export function ruleText(c: ClassData, r: Rule) {
   return `${name}与${studentName(c, r.targetId)} · ${relationText[r.relation ?? ""] ?? "学生关系"}`;
 }
 function needOkay(c: ClassData, r: Rule, s: Seat) {
+  if (s.podiumSide) {
+    return r.need === "front" || r.need === "edge" ||
+      (r.need === "window" && s.podiumSide === c.layout.windowSide) ||
+      (r.need === "door" && s.podiumSide === c.layout.doorSide);
+  }
   switch (r.need) {
     case "front":
       return s.row < Math.min(3, c.layout.rows);
@@ -257,12 +266,12 @@ export function explain(
   }
   const prior = c.versions.at(-1)?.assignments;
   const old =
-    prior && seatsOf(c).find((s) => s.id === studentSeat(prior, studentId));
+    prior && seatsOf({ ...c, layout: c.versions.at(-1)?.layout ?? c.layout }).find((s) => s.id === studentSeat(prior, studentId));
   if (old)
     context.push(
       old.id === seat.id
         ? "与上一轮座位相同"
-        : `上一轮在第 ${old.row + 1} 排，本轮在第 ${seat.row + 1} 排`,
+        : `上一轮在${seatLabel(old)}，本轮在${seatLabel(seat)}`,
     );
   const partner = partnerOf(c, a, studentId);
   if (partner) {
@@ -273,6 +282,7 @@ export function explain(
       `${studentName(c, partner)}是同桌${before ? `，过去同桌过 ${before} 轮` : "，过去未同桌过"}`,
     );
   }
+  if (seat.podiumSide) context.push("值日班长特殊座位，自动排座会保留，教师可手动更换");
   if (c.locks.includes(studentId))
     context.push("你已锁定这个位置，自动排座会保留它");
   if (!must.length && !prefer.length) context.unshift("没有单独设置座位要求");
@@ -290,7 +300,7 @@ export function fairness(c: ClassData, a: Assignment = c.assignments): Issue[] {
       .filter((s): s is Seat => !!s);
     if (
       seatHistory.length >= 3 &&
-      seatHistory.slice(-3).every((s) => s.row >= c.layout.rows - 2)
+      seatHistory.slice(-3).every((s) => !s.podiumSide && s.row >= c.layout.rows - 2)
     )
       issues.push({
         id: `rear-${student.id}`,
@@ -302,7 +312,7 @@ export function fairness(c: ClassData, a: Assignment = c.assignments): Issue[] {
       seatHistory.length >= 3 &&
       seatHistory
         .slice(-3)
-        .every((s) => s.desk === 0 || s.desk === rowPattern(c.layout, s.row).length - 1)
+        .every((s) => !s.podiumSide && (s.desk === 0 || s.desk === rowPattern(c.layout, s.row).length - 1))
     )
       issues.push({
         id: `edge-${student.id}`,
@@ -352,7 +362,7 @@ function normalize(c: ClassData, a: Assignment) {
       placed.add(sid);
     }
   }
-  const empty = seats.filter((s) => !result[s.id]);
+  const empty = seats.filter((s) => !s.podiumSide && !result[s.id]);
   c.students
     .filter((s) => !placed.has(s.id))
     .forEach((s, i) => {
@@ -374,7 +384,7 @@ function createScorer(c: ClassData, base: Assignment, genderPreference: GenderPr
     const places = c.versions
       .slice(-3)
       .map((v) => seatMap.get(studentSeat(v.assignments, student.id) ?? ""))
-      .filter((s): s is Seat => !!s);
+      .filter((s): s is Seat => !!s && !s.podiumSide);
     const partners = new Map<string, number>();
     for (const version of c.versions.slice(-4)) {
       for (const partner of deskMates(c, version.assignments, student.id))
@@ -496,7 +506,7 @@ export function generate(c: ClassData, goal: Goal = "fresh", genderPreference: G
             description: "换一个方向做比较",
           },
         ];
-  const seatIds = seatsOf(c).map((s) => s.id);
+  const seatIds = seatsOf(c).filter((s) => !s.podiumSide).map((s) => s.id);
   const protectedStudents = new Set([...c.locks, ...c.protectedIds]);
   const original = normalize(c, c.assignments);
   const movable = seatIds.filter(
@@ -615,7 +625,7 @@ export function generatePatternProposals(c: ClassData): Proposal[] {
   const original = normalize(c, c.assignments);
   const protectedIds = new Set([...c.locks, ...c.protectedIds]);
   const columns = new Map<number, Seat[]>();
-  for (const seat of seatsOf(c)) {
+  for (const seat of seatsOf(c).filter((seat) => !seat.podiumSide)) {
     const list = columns.get(seat.col) ?? [];
     list.push(seat);
     columns.set(seat.col, list);
@@ -636,7 +646,7 @@ export function generatePatternProposals(c: ClassData): Proposal[] {
       });
     }
     let assignments = { ...rotated };
-    const movable = seatsOf(c).map((seat) => seat.id).filter((seatId) => !protectedIds.has(rotated[seatId]));
+    const movable = seatsOf(c).filter((seat) => !seat.podiumSide).map((seat) => seat.id).filter((seatId) => !protectedIds.has(rotated[seatId]));
     for (let pass = 0; pass < Math.min(12, c.students.length); pass++) {
       const hardBefore = inspect(c, assignments).filter((issue) => issue.severity === "must").length;
       if (!hardBefore) break;
@@ -682,12 +692,12 @@ export function localSuggestions(
 ): Proposal[] {
   const initial = normalize(c, c.assignments),
     from = studentSeat(initial, studentId);
-  if (!from) return [];
+  if (!from || seatsOf(c).find((seat) => seat.id === from)?.podiumSide) return [];
   const candidates: Proposal[] = [];
   const currentIssues = inspect(c, initial).filter(
     (i) => i.severity === "must",
   ).length;
-  for (const target of seatsOf(c)) {
+  for (const target of seatsOf(c).filter((seat) => !seat.podiumSide)) {
     if (
       target.id === from ||
       (initial[target.id] && c.locks.includes(initial[target.id])) ||

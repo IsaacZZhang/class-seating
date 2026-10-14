@@ -36,6 +36,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import readXlsxFile from "read-excel-file";
+import { PodiumSeats } from "./podium-seats";
 import { withoutClass } from "./class-management";
 import { deleteClass } from "./cloud";
 import {
@@ -321,7 +322,7 @@ function SeatBoard({
   const [arrows, setArrows] = useState<string[]>([]);
   useLayoutEffect(() => {
     if (!motion || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const root = rowsRef.current;
+    const root = boardRef.current;
     const seat = (id: string) => [...(root?.querySelectorAll<HTMLElement>("[data-seat-id]") ?? [])]
       .find((node) => node.dataset.seatId === id);
     const from = seat(motion.fromSeat);
@@ -347,7 +348,7 @@ function SeatBoard({
     if (!root || trajectory.length < 2) { setArrows([]); return; }
     const measure = () => {
       const bounds = root.getBoundingClientRect();
-      const nodes = [...root.querySelectorAll<HTMLElement>("[data-seat-id]")];
+      const nodes = [...(boardRef.current?.querySelectorAll<HTMLElement>("[data-seat-id]") ?? [])];
       const points = trajectory.map((point) => {
         const node = nodes.find((item) => item.dataset.seatId === point.seatId);
         if (!node) return undefined;
@@ -374,7 +375,7 @@ function SeatBoard({
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(root);
-    root.querySelectorAll<HTMLElement>("[data-seat-id]").forEach((node) => observer.observe(node));
+    boardRef.current?.querySelectorAll<HTMLElement>("[data-seat-id]").forEach((node) => observer.observe(node));
     window.addEventListener("resize", measure);
     return () => { observer.disconnect(); window.removeEventListener("resize", measure); };
   }, [trajectoryKey, c.layout, zoom]);
@@ -418,10 +419,143 @@ function SeatBoard({
     });
     onSelectStudents?.(ids, start.additive ? "add" : "replace");
   }
+  function renderSeat(seatId: string) {
+    const disabled = !seatMap.has(seatId);
+    if (disabled && !layoutMode) return <span key={seatId} className="seat-hidden" aria-hidden="true" />;
+    const stops = trajectory.map((point, index) => ({ ...point, index: index + 1 })).filter((point) => point.seatId === seatId);
+    const studentId = layoutMode ? undefined : focused ? (stops.length ? focusStudentId : undefined) : assignments[seatId];
+    const student = c.students.find((s) => s.id === studentId);
+    const studentIssues = (studentId ? issuesByStudent.get(studentId) : undefined) ?? [];
+    const changed =
+      highlightChanges &&
+      studentId &&
+      previous &&
+      studentSeat(previous, studentId) !== seatId;
+    const prevSeat =
+      changed && previous
+        ? seatMap.get(studentSeat(previous, studentId) ?? "")
+        : undefined;
+    const match = query && student?.name.includes(query.trim());
+    const dim = query && query.trim() && !match;
+    const draggedSeat = dragged ? studentSeat(c.assignments, dragged) : undefined;
+    const draggedNeedsSeat = !!dragged && (!draggedSeat || !seatMap.has(draggedSeat));
+    const movingGroup = dragCohort.length > 1 && !!dragged && dragCohort.includes(dragged);
+    const occupant = assignments[seatId];
+    const canDrop = !!dragged && !!onDropStudent && !disabled && !readOnly && !layoutMode && !publicMode && !frozen && !c.locks.includes(dragged) && (movingGroup ? !dragCohort.some((id) => c.locks.includes(id)) && (!occupant || dragCohort.includes(occupant)) : !c.locks.includes(occupant) && (!draggedNeedsSeat || !occupant));
+    return (
+      <button
+        type="button"
+        key={seatId}
+        data-seat-id={seatId}
+        title={
+          disabled
+            ? "停用座位，点击启用"
+            : layoutMode
+              ? "可用座位，点击停用"
+              : focused && !stops.length
+                ? "其他座位"
+            : student
+              ? `${student.name} · ${seatLabel(seatMap.get(seatId))}${changed ? ` · 上次 ${seatLabel(prevSeat)}` : ""}`
+              : `空位 · ${seatLabel(seatMap.get(seatId))}`
+        }
+        className={`seat ${disabled ? "disabled" : ""} ${!student ? "empty" : ""} ${studentId && selected?.includes(studentId) ? "selected" : ""} ${markedSeats.includes(seatId) ? "zone-mark" : ""} ${studentId && c.locks.includes(studentId) && !publicMode && !frozen ? "locked" : ""} ${studentIssues.some((i) => i.severity === "must") ? "conflict" : ""} ${studentIssues.some((i) => i.severity === "prefer") ? "warning" : ""} ${changed ? "changed" : ""} ${highlightChanges && changed ? "proposal-changed" : ""} ${stops.length ? "trajectory-seat" : ""} ${dim ? "dim" : ""} ${match ? "match" : ""} ${canDrop ? "drop-candidate" : ""} ${dragged && studentId && (dragged === studentId || (dragCohort.includes(studentId) && dragCohort.includes(dragged))) ? "drag-origin" : ""}`}
+        onClick={(e) => {
+          if (!frozen) onSeat?.(seatId, e);
+        }}
+        disabled={!frozen && (publicMode || readOnly || (!layoutMode && disabled))}
+        draggable={
+          !frozen &&
+          !publicMode && !readOnly &&
+          !layoutMode &&
+          !!studentId &&
+          !c.locks.includes(studentId)
+        }
+        onDragStart={(e) => {
+          if (studentId) {
+            const cohort = dragCohort.length > 1 && dragCohort.includes(studentId) ? dragCohort : undefined;
+            e.dataTransfer.setData("text/plain", cohort ? `formation:${studentId}:${cohort.join(",")}` : studentId);
+            e.dataTransfer.effectAllowed = "move";
+            setDragged?.(studentId);
+          }
+        }}
+        onDragEnd={() => {
+          setDragged?.(undefined);
+        }}
+        onDragEnter={(e) => {
+          if (onDropStudent && !disabled && !readOnly && !frozen && !layoutMode && !publicMode) e.preventDefault();
+        }}
+        onDragOver={(e) => {
+          if (onDropStudent && !disabled && !readOnly && !frozen && !layoutMode && !publicMode) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const source = e.dataTransfer.getData("text/plain") || dragged;
+          if (!disabled && !readOnly && !frozen && !layoutMode && !publicMode && source) onDropStudent?.(source, seatId);
+          setDragged?.(undefined);
+        }}
+      >
+        {disabled ? (
+          <span className="seat-disabled-mark">＋</span>
+        ) : (
+          <>
+            {student && <StudentAvatar student={student} />}
+            <span className="seat-name">
+              {dragged && dragged === studentId
+                ? "移动中…"
+                : (student?.name ??
+                  (layoutMode ? "可用" : frozen || focused || !markEmpty ? "" : "＋"))}
+            </span>
+            {student && (showScore || !!c.groups?.length || !!student.points) && <span className="seat-points">{student.points ?? 0}</span>}
+            {changed && <span className="seat-change-badge">变</span>}
+            {stops.length > 0 && <span className="trajectory-stops">{stops.map((stop) => <span key={stop.index} title={`第 ${stop.round} 轮 · ${dateText(stop.at)}`}><b>{stop.index}</b><small>{dateText(stop.at)}</small></span>)}</span>}
+            {!publicMode && !frozen && !layoutMode && !focused &&
+              student &&
+              dragged !== studentId && (
+                <span className="seat-symbols">
+                  {c.locks.includes(student.id) && (
+                    <LockKeyhole
+                      size={12}
+                      aria-label="已锁定"
+                    />
+                  )}
+                  {activeRules(c).some(
+                    (r) =>
+                      r.studentId === student.id ||
+                      r.targetId === student.id,
+                  ) && <i aria-label="有规则" />}
+                  {studentIssues.some(
+                    (i) => i.severity === "must",
+                  ) && (
+                    <CircleAlert
+                      size={13}
+                      aria-label="有冲突"
+                    />
+                  )}
+                  {changed && (
+                    <ArrowDownUp
+                      size={12}
+                      aria-label="本轮变化"
+                    />
+                  )}
+                </span>
+              )}
+            {highlightChanges && changed && prevSeat && (
+              <span className="seat-old">
+                原 {seatLabel(prevSeat)}
+              </span>
+            )}
+          </>
+        )}
+      </button>
+    );
+  }
   return (
     <div
       ref={boardRef}
-      className={`classroom ${publicMode ? "classroom-public" : ""} ${readOnly ? "classroom-readonly" : ""} ${frozen ? "stage-locked" : ""} ${layoutMode ? "classroom-layout" : ""} ${focused ? "classroom-focus" : ""} ${marquee ? "marquee-active" : ""}`}
+      className={`classroom ${c.layout.podiumSeats?.length ? "classroom-with-podium" : ""} ${publicMode ? "classroom-public" : ""} ${readOnly ? "classroom-readonly" : ""} ${frozen ? "stage-locked" : ""} ${layoutMode ? "classroom-layout" : ""} ${focused ? "classroom-focus" : ""} ${marquee ? "marquee-active" : ""}`}
       style={{ "--seat-zoom": zoom, "--row-count": c.layout.rows, "--row-seat-ratio": 1.04 / c.layout.rows } as React.CSSProperties}
       onPointerDown={(event) => {
         if (!canMarquee || event.button !== 0) return;
@@ -460,6 +594,7 @@ function SeatBoard({
           门 · {c.layout.doorSide === "right" ? "右" : "左"}
         </span>
       </div>
+      <PodiumSeats layout={c.layout} renderSeat={renderSeat} />
       <div className="rows" ref={rowsRef}>
         {!layoutMode && (
           <GroupRings
@@ -493,137 +628,7 @@ function SeatBoard({
                 return <div className="desk" key={desk} style={{ gridColumn: desk + 1, "--desk-seats": capacity } as React.CSSProperties}>
                   {Array.from({ length: capacity }, (_, side) => side).map((side) => {
                     const seatId = `r${row}-d${desk}-s${side}`;
-                    const disabled = !seatMap.has(seatId);
-                    if (disabled && !layoutMode) return <span key={seatId} className="seat-hidden" aria-hidden="true" />;
-                    const stops = trajectory.map((point, index) => ({ ...point, index: index + 1 })).filter((point) => point.seatId === seatId);
-                    const studentId = layoutMode ? undefined : focused ? (stops.length ? focusStudentId : undefined) : assignments[seatId];
-                    const student = c.students.find((s) => s.id === studentId);
-                    const studentIssues = (studentId ? issuesByStudent.get(studentId) : undefined) ?? [];
-                    const changed =
-                      highlightChanges &&
-                      studentId &&
-                      previous &&
-                      studentSeat(previous, studentId) !== seatId;
-                    const prevSeat =
-                      changed && previous
-                        ? seatMap.get(studentSeat(previous, studentId) ?? "")
-                        : undefined;
-                    const match = query && student?.name.includes(query.trim());
-                    const dim = query && query.trim() && !match;
-                    const draggedSeat = dragged ? studentSeat(c.assignments, dragged) : undefined;
-                    const draggedNeedsSeat = !!dragged && (!draggedSeat || !seatMap.has(draggedSeat));
-                    const movingGroup = dragCohort.length > 1 && !!dragged && dragCohort.includes(dragged);
-                    const occupant = assignments[seatId];
-                    const canDrop = !!dragged && !!onDropStudent && !disabled && !readOnly && !layoutMode && !publicMode && !frozen && !c.locks.includes(dragged) && (movingGroup ? !dragCohort.some((id) => c.locks.includes(id)) && (!occupant || dragCohort.includes(occupant)) : !c.locks.includes(occupant) && (!draggedNeedsSeat || !occupant));
-                    return (
-                      <button
-                        type="button"
-                        key={seatId}
-                        data-seat-id={seatId}
-                        title={
-                          disabled
-                            ? "停用座位，点击启用"
-                            : layoutMode
-                              ? "可用座位，点击停用"
-                              : focused && !stops.length
-                                ? "其他座位"
-                            : student
-                              ? `${student.name} · ${seatLabel(seatMap.get(seatId))}${changed ? ` · 上次 ${seatLabel(prevSeat)}` : ""}`
-                              : `空位 · 第 ${row + 1} 排`
-                        }
-                        className={`seat ${disabled ? "disabled" : ""} ${!student ? "empty" : ""} ${studentId && selected?.includes(studentId) ? "selected" : ""} ${markedSeats.includes(seatId) ? "zone-mark" : ""} ${studentId && c.locks.includes(studentId) && !publicMode && !frozen ? "locked" : ""} ${studentIssues.some((i) => i.severity === "must") ? "conflict" : ""} ${studentIssues.some((i) => i.severity === "prefer") ? "warning" : ""} ${changed ? "changed" : ""} ${highlightChanges && changed ? "proposal-changed" : ""} ${stops.length ? "trajectory-seat" : ""} ${dim ? "dim" : ""} ${match ? "match" : ""} ${canDrop ? "drop-candidate" : ""} ${dragged && studentId && (dragged === studentId || (dragCohort.includes(studentId) && dragCohort.includes(dragged))) ? "drag-origin" : ""}`}
-                        onClick={(e) => {
-                          if (!frozen) onSeat?.(seatId, e);
-                        }}
-                        disabled={!frozen && (publicMode || readOnly || (!layoutMode && disabled))}
-                        draggable={
-                          !frozen &&
-                          !publicMode && !readOnly &&
-                          !layoutMode &&
-                          !!studentId &&
-                          !c.locks.includes(studentId)
-                        }
-                        onDragStart={(e) => {
-                          if (studentId) {
-                            const cohort = dragCohort.length > 1 && dragCohort.includes(studentId) ? dragCohort : undefined;
-                            e.dataTransfer.setData("text/plain", cohort ? `formation:${studentId}:${cohort.join(",")}` : studentId);
-                            e.dataTransfer.effectAllowed = "move";
-                            setDragged?.(studentId);
-                          }
-                        }}
-                        onDragEnd={() => {
-                          setDragged?.(undefined);
-                        }}
-                        onDragEnter={(e) => {
-                          if (onDropStudent && !disabled && !readOnly && !frozen && !layoutMode && !publicMode) e.preventDefault();
-                        }}
-                        onDragOver={(e) => {
-                          if (onDropStudent && !disabled && !readOnly && !frozen && !layoutMode && !publicMode) {
-                            e.preventDefault();
-                            e.dataTransfer.dropEffect = "move";
-                          }
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          const source = e.dataTransfer.getData("text/plain") || dragged;
-                          if (!disabled && !readOnly && !frozen && !layoutMode && !publicMode && source) onDropStudent?.(source, seatId);
-                          setDragged?.(undefined);
-                        }}
-                      >
-                        {disabled ? (
-                          <span className="seat-disabled-mark">＋</span>
-                        ) : (
-                          <>
-                            {student && <StudentAvatar student={student} />}
-                            <span className="seat-name">
-                              {dragged && dragged === studentId
-                                ? "移动中…"
-                                : (student?.name ??
-                                  (layoutMode ? "可用" : frozen || focused || !markEmpty ? "" : "＋"))}
-                            </span>
-                            {student && (showScore || !!c.groups?.length || !!student.points) && <span className="seat-points">{student.points ?? 0}</span>}
-                            {changed && <span className="seat-change-badge">变</span>}
-                            {stops.length > 0 && <span className="trajectory-stops">{stops.map((stop) => <span key={stop.index} title={`第 ${stop.round} 轮 · ${dateText(stop.at)}`}><b>{stop.index}</b><small>{dateText(stop.at)}</small></span>)}</span>}
-                            {!publicMode && !frozen && !layoutMode && !focused &&
-                              student &&
-                              dragged !== studentId && (
-                                <span className="seat-symbols">
-                                  {c.locks.includes(student.id) && (
-                                    <LockKeyhole
-                                      size={12}
-                                      aria-label="已锁定"
-                                    />
-                                  )}
-                                  {activeRules(c).some(
-                                    (r) =>
-                                      r.studentId === student.id ||
-                                      r.targetId === student.id,
-                                  ) && <i aria-label="有规则" />}
-                                  {studentIssues.some(
-                                    (i) => i.severity === "must",
-                                  ) && (
-                                    <CircleAlert
-                                      size={13}
-                                      aria-label="有冲突"
-                                    />
-                                  )}
-                                  {changed && (
-                                    <ArrowDownUp
-                                      size={12}
-                                      aria-label="本轮变化"
-                                    />
-                                  )}
-                                </span>
-                              )}
-                            {highlightChanges && changed && prevSeat && (
-                              <span className="seat-old">
-                                原第 {prevSeat.row + 1} 排
-                              </span>
-                            )}
-                          </>
-                        )}
-                      </button>
-                    );
+                    return renderSeat(seatId);
                   })}
                 </div>;
               })}
@@ -807,7 +812,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
         .filter(
           ([seatId, sid]) => previousVersion?.assignments[seatId] !== sid,
         )
-        .map(([seatId]) => Number(seatId.match(/^r(\d+)/)?.[1] ?? 0)),
+        .map(([seatId]) => seatId.startsWith("podium-") ? -1 : Number(seatId.match(/^r(\d+)/)?.[1] ?? 0)),
     ),
   ).sort((a, b) => a - b);
   const moveRows = changedRows.length
@@ -1466,6 +1471,20 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
     });
     if (countBefore > countAfter) setToast(`${countBefore - countAfter} 名学生因座位移除变为待安排，可撤销。`);
   }
+  function setDutyStudent(side: "left" | "right", studentId: string) {
+    const seatId = `podium-${side}`;
+    const occupant = c.assignments[seatId];
+    if (!studentId) {
+      if (occupant && c.locks.includes(occupant)) { setToast("请先解锁这位学生，再更换值日班长。"); return; }
+      commit((_, cl) => { delete cl.assignments[seatId]; });
+      return;
+    }
+    if (occupant === studentId) return;
+    const result = moveStudentToSeat(c, studentId, seatId);
+    if (!result.ok) { setToast(result.reason === "locked" ? "请先解锁学生，再更换值日班长。" : "请先清空这个特殊座位，再指定待安排学生。"); return; }
+    commit((_, cl) => { cl.assignments = result.assignments; });
+    setToast(`已将${studentName(c, studentId)}安排到讲台${side === "left" ? "左" : "右"}侧。`);
+  }
   function editRow(row: number, update: (pattern: number[]) => number[]) {
     const layout = clone(c.layout);
     layout.rowPatterns = Array.from({ length: layout.rows }, (_, i) => [...rowPattern(layout, i)]);
@@ -1502,7 +1521,8 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
     layout.desks = Math.max(1, ...layout.rowPatterns.map((pattern) => pattern.length));
     layout.disabled = layout.disabled.flatMap((seatId) => {
       const match = /^r(\d+)-d(\d+)-s(\d+)$/.exec(seatId);
-      if (!match || Number(match[1]) === row) return [];
+      if (!match) return [seatId];
+      if (Number(match[1]) === row) return [];
       const newRow = Number(match[1]) > row ? Number(match[1]) - 1 : Number(match[1]);
       return [`r${newRow}-d${match[2]}-s${match[3]}`];
     });
@@ -1510,7 +1530,8 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
     const moved: Assignment = {};
     for (const [seatId, sid] of Object.entries(oldAssignments)) {
       const match = /^r(\d+)-d(\d+)-s(\d+)$/.exec(seatId);
-      if (!match || Number(match[1]) === row) continue;
+      if (!match) { moved[seatId] = sid; continue; }
+      if (Number(match[1]) === row) continue;
       const newRow = Number(match[1]) > row ? Number(match[1]) - 1 : Number(match[1]);
       moved[`r${newRow}-d${match[2]}-s${match[3]}`] = sid;
     }
@@ -1779,6 +1800,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
     </main>
   );
 
+  const printablePodiumSeats = seatsOf(c).filter((seat) => seat.podiumSide).sort((a, b) => printPerspective === "teacher" ? a.col - b.col : b.col - a.col);
   const stage = view === "classroom" && !layoutMode;
 
   if (publicMode)
@@ -1822,7 +1844,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
             <h3>
               {moveStep >= moveRows.length
                 ? "全班换座完成"
-                : `第 ${moveRows[moveStep] + 1} 排请移动`}
+                : moveRows[moveStep] === -1 ? "讲台两侧值日班长请移动" : `第 ${moveRows[moveStep] + 1} 排请移动`}
             </h3>
             <button
               className="button primary"
@@ -2096,7 +2118,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
                       <span>
                         {s.name}
                         <small>
-                          {seat ? `第 ${seat.row + 1} 排` : "待安排 · 拖到空位"}
+                          {seat ? seat.podiumSide ? seatLabel(seat) : `第 ${seat.row + 1} 排` : "待安排 · 拖到空位"}
                         </small>
                       </span>
                       {c.locks.includes(s.id) && <LockKeyhole size={13} />}
@@ -2605,6 +2627,15 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
               <section className="layout-canvas"><div className="board-toolbar"><b>教室预览</b><span className={`layout-capacity ${seatsOf(c).length < c.students.length ? "short" : "enough"}`}>{seatsOf(c).length} 个可用座位 / {c.students.length} 名学生 · {seatsOf(c).length < c.students.length ? `还差 ${c.students.length - seatsOf(c).length} 座` : `座位足够${seatsOf(c).length > c.students.length ? `，余 ${seatsOf(c).length - c.students.length} 座` : ""}`}</span></div><SeatBoard c={c} assignments={{}} layoutMode onSeat={selectSeat} /><p className="muted">点击座位可停用或重新启用。移除的座位不会出现在排座画布中；已安排的学生会转为待安排，可撤销。</p></section>
               <section className="layout-controls"><div className="layout-controls-head"><div className="layout-controls-title"><h2>逐排编辑</h2><button className="button outline" onClick={addRow} disabled={c.layout.rows >= 12}><Plus size={15} /> 加一排</button></div><div className="layout-bulk-actions"><span>批量添加到每排末尾</span><button className="button mini" onClick={() => addColumn(1)} disabled={Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length).some((length) => length >= 8)}><Plus size={14} /> 单人座列</button><button className="button mini" onClick={() => addColumn(2)} disabled={Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length).some((length) => length >= 8)}><Plus size={14} /> 双人桌列</button><button className="button mini" onClick={() => addColumn(3)} disabled={Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length).some((length) => length >= 8)}><Plus size={14} /> 三人桌列</button></div></div>
                 {Array.from({ length: c.layout.rows }, (_, row) => <div className="layout-row-card" key={row}><div className="layout-row-head"><strong>第 {row + 1} 排</strong><span>{rowPattern(c.layout, row).reduce((sum, capacity) => sum + capacity, 0)} 个座位</span><button className="icon-button" title={`删除第 ${row + 1} 排`} onClick={() => removeRow(row)} disabled={c.layout.rows <= 1}><X size={15} /></button></div><div className="layout-desk-list">{rowPattern(c.layout, row).map((capacity, desk) => <button key={desk} className={`layout-desk-choice ${capacity === 1 ? "single" : ""} ${capacity === 3 ? "triple" : ""}`} title={`第 ${desk + 1} 组，点击在单人、双人、三人之间切换`} onClick={() => editRow(row, (pattern) => pattern.map((value, index) => index === desk ? value >= 3 ? 1 : value + 1 : value))}><span>{desk + 1}</span><b>{capacity === 1 ? "单人" : capacity === 3 ? "三人" : "双人"}</b></button>)}</div><div className="layout-row-actions"><button className="button mini" onClick={() => editRow(row, (pattern) => [...pattern, 2])} disabled={rowPattern(c.layout, row).length >= 8}><Plus size={14} /> 加双人桌</button><button className="button mini" onClick={() => editRow(row, (pattern) => [...pattern, 3])} disabled={rowPattern(c.layout, row).length >= 8}><Plus size={14} /> 加三人桌</button><button className="button mini" onClick={() => editRow(row, (pattern) => [...pattern, 1])} disabled={rowPattern(c.layout, row).length >= 8}><Plus size={14} /> 加单人桌</button><button className="button mini" onClick={() => editRow(row, (pattern) => pattern.slice(0, -1))} disabled={rowPattern(c.layout, row).length <= 1}>移除末桌</button></div></div>)}
+                <section className="layout-podium-controls"><h3>讲台两侧 · 值日班长</h3><p>左右各可添加一个单人座。直接指定学生，或回到座位页拖入；自动排座与轮换会保留值日班长的位置。</p>
+                  {(["left", "right"] as const).map((side) => {
+                    const enabled = c.layout.podiumSeats?.includes(side) ?? false;
+                    return <div className="layout-podium-choice" key={side}>
+                      <label><input type="checkbox" checked={enabled} onChange={(event) => updateLayout({ ...c.layout, podiumSeats: event.target.checked ? [...(c.layout.podiumSeats ?? []), side] : (c.layout.podiumSeats ?? []).filter((item) => item !== side), disabled: c.layout.disabled.filter((seatId) => seatId !== `podium-${side}`) })} /> 添加讲台{side === "left" ? "左" : "右"}侧座位</label>
+                      {enabled && <label>值日班长<select aria-label={`讲台${side === "left" ? "左" : "右"}侧值日班长`} value={c.assignments[`podium-${side}`] ?? ""} onChange={(event) => setDutyStudent(side, event.target.value)}><option value="">暂不指定</option>{c.students.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}</select></label>}
+                    </div>;
+                  })}
+                </section>
                 <div className="layout-sides"><label>窗在<select value={c.layout.windowSide} onChange={(e) => updateLayout({ ...c.layout, windowSide: e.target.value as "left" | "right" })}><option value="left">左侧</option><option value="right">右侧</option></select></label><label>门在<select value={c.layout.doorSide} onChange={(e) => updateLayout({ ...c.layout, doorSide: e.target.value as "left" | "right" })}><option value="left">左侧</option><option value="right">右侧</option></select></label></div>
               </section>
             </div>
@@ -3487,6 +3518,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
           {hasDraftChanges && c.published ? "（草稿）" : ""}
         </h1>
         {printPerspective === "teacher" && <p>黑板 / 讲台</p>}
+        {printPerspective === "teacher" && <div className="print-podium">{printablePodiumSeats.map((seat) => <span key={seat.id}><b>{seatLabel(seat)}</b><strong>{studentName(c, c.assignments[seat.id])}</strong></span>)}</div>}
         {Array.from({ length: c.layout.rows }, (_, i) =>
           printPerspective === "teacher" ? i : c.layout.rows - 1 - i,
         ).map((row) => (
@@ -3525,6 +3557,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
             ))}
           </div>
         ))}
+        {printPerspective === "student" && <div className="print-podium">{printablePodiumSeats.map((seat) => <span key={seat.id}><b>{seatLabel(seat)}</b><strong>{studentName(c, c.assignments[seat.id])}</strong></span>)}</div>}
         {printPerspective === "student" && <p>黑板 / 讲台</p>}
         <footer>
           {printPerspective === "teacher" ? "黑板方向 ↑" : "黑板方向 ↓"} ·{" "}

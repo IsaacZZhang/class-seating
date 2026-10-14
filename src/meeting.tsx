@@ -6,11 +6,12 @@ import {
   assignZoneByPoints,
   groupPoints,
   groupsByPriority,
-  membersByPoints,
+  seatingMembersByPoints,
   nextTurn,
   placeInZone,
   zoneError,
 } from "./groups";
+import { seatsOf } from "./seating";
 import { ClassData } from "./model";
 export function MeetingScreen({
   klass,
@@ -34,10 +35,11 @@ export function MeetingScreen({
   const activeGroup =
     (klass.groups ?? []).find((group) => group.id === manualGroup) ??
     (turn.phase === "zone" || turn.phase === "seat" ? turn.group : undefined);
-  const members = activeGroup ? membersByPoints(klass.students, activeGroup.id) : [];
+  const members = activeGroup ? seatingMembersByPoints(klass, activeGroup.id) : [];
 
   function chooseSeat(seatId: string) {
     setMessage("");
+    if (seatsOf(klass).find((seat) => seat.id === seatId)?.podiumSide) { setMessage("值日班长由教师在教室编辑中指定，不参与小组选座。"); return; }
     if (manualGroup && activeGroup) {
       const next = draft.includes(seatId) ? draft.filter((item) => item !== seatId) : [...draft, seatId];
       setDraft(next);

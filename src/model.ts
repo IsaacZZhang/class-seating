@@ -44,6 +44,8 @@ export type Layout = {
   desks: number;
   /** Each row lists desk capacities from left to right. Missing means legacy double desks. */
   rowPatterns?: number[][];
+  /** Manually assigned duty monitor seats beside the podium. */
+  podiumSeats?: ("left" | "right")[];
   disabled: string[];
   doorSide: "left" | "right";
   windowSide: "left" | "right";
@@ -101,6 +103,7 @@ export type Seat = {
   side: number;
   col: number;
   capacity?: number;
+  podiumSide?: "left" | "right";
 };
 export type Issue = {
   id: string;

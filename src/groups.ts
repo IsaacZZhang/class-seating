@@ -28,6 +28,11 @@ export function membersByPoints(students: Student[], groupId: string) {
     );
 }
 
+export function seatingMembersByPoints(c: ClassData, groupId: string, assignments: Assignment = c.assignments) {
+  const dutyStudents = new Set(seatsOf(c).filter((seat) => seat.podiumSide).map((seat) => assignments[seat.id]));
+  return membersByPoints(c.students, groupId).filter((student) => !dutyStudents.has(student.id));
+}
+
 export function groupsByPriority(c: ClassData) {
   return [...(c.groups ?? [])].sort(
     (a, b) =>
@@ -37,6 +42,7 @@ export function groupsByPriority(c: ClassData) {
 }
 
 function touches(a: Seat, b: Seat) {
+  if (a.podiumSide || b.podiumSide) return false;
   if (a.row === b.row && a.desk === b.desk) return true;
   if (a.row === b.row && Math.abs(a.desk - b.desk) === 1) return true;
   return a.desk === b.desk && Math.abs(a.row - b.row) === 1;
@@ -58,7 +64,7 @@ export function groupClusters(
   const byGroup = new Map<string, string[]>();
   for (const [seatId, studentId] of Object.entries(assignments)) {
     const student = studentById.get(studentId);
-    if (!student?.groupId || !seatById.has(seatId)) continue;
+    if (!student?.groupId || !seatById.has(seatId) || seatById.get(seatId)?.podiumSide) continue;
     const list = byGroup.get(student.groupId) ?? [];
     list.push(seatId);
     byGroup.set(student.groupId, list);
@@ -98,7 +104,7 @@ export function seatsAreTogether(seats: Seat[], seatIds: string[]) {
   const picked = seatIds
     .map((seatId) => seats.find((seat) => seat.id === seatId))
     .filter((seat): seat is Seat => !!seat);
-  if (picked.length !== seatIds.length || picked.length === 0) return false;
+  if (picked.length !== seatIds.length || picked.length === 0 || picked.some((seat) => seat.podiumSide)) return false;
   const unseen = new Set(picked.map((seat) => seat.id));
   const queue = [picked[0]];
   unseen.delete(picked[0].id);
@@ -126,7 +132,8 @@ export function nextTurn(c: ClassData, assignments: Assignment = c.assignments):
   if (!(c.groups ?? []).length || !ranked.length) return { phase: "need-groups" };
   const seats = seatsOf(c);
   for (const group of ranked) {
-    const members = membersByPoints(c.students, group.id);
+    const members = seatingMembersByPoints(c, group.id, assignments);
+    if (!members.length) continue;
     const zoneReady =
       group.zone.length === members.length && seatsAreTogether(seats, group.zone);
     if (!zoneReady) return { phase: "zone", group, members };
@@ -140,7 +147,8 @@ export function nextTurn(c: ClassData, assignments: Assignment = c.assignments):
 }
 
 export function zoneError(c: ClassData, groupId: string, seatIds: string[]) {
-  const members = c.students.filter((student) => student.groupId === groupId);
+  const members = seatingMembersByPoints(c, groupId);
+  if (seatIds.some((id) => seatsOf(c).find((seat) => seat.id === id)?.podiumSide)) return "值日班长座位不参与小组选区";
   if (!members.length) return "这个小组还没有同学";
   if (seatIds.length !== members.length)
     return `请正好选择 ${members.length} 个连在一起的座位`;
@@ -166,6 +174,7 @@ export function moveFormation(
   const anchor = seats.get(studentSeat(c.assignments, anchorId) ?? "");
   const target = seats.get(targetSeatId);
   if (!anchor || !target) return { ok: false as const, reason: "请拖到可用座位" };
+  if (target.podiumSide || moverIds.some((studentId) => seats.get(studentSeat(c.assignments, studentId) ?? "")?.podiumSide)) return { ok: false as const, reason: "值日班长特殊座位需要单独移动" };
   const rowShift = target.row - anchor.row;
   const deskShift = target.desk - anchor.desk;
   const sideShift = target.side - anchor.side;
@@ -211,10 +220,10 @@ export function assignZoneByPoints(
 ) {
   const group = (c.groups ?? []).find((item) => item.id === groupId);
   if (!group) return assignments;
-  const members = membersByPoints(c.students, groupId);
+  const members = seatingMembersByPoints(c, groupId, assignments);
   const seats = group.zone
     .map((seatId) => seatsOf(c).find((seat) => seat.id === seatId))
-    .filter((seat): seat is Seat => !!seat)
+    .filter((seat): seat is Seat => !!seat && !seat.podiumSide)
     .sort((a, b) => a.row - b.row || a.desk - b.desk || a.side - b.side);
   const next = { ...assignments };
   const memberIds = new Set(members.map((student) => student.id));

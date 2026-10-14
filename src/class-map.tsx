@@ -1,11 +1,12 @@
 import { useRef, type CSSProperties } from "react";
+import { PodiumSeats } from "./podium-seats";
 import { GroupRings } from "./group-ring";
 import boyAvatar from "../ui/webp/boy.webp";
 import boyGlassesAvatar from "../ui/webp/boy-glasses.webp";
 import girlAvatar from "../ui/webp/girl.webp";
 import girlGlassesAvatar from "../ui/webp/girl-glasses.webp";
 import { Assignment, ClassData, Student } from "./model";
-import { rowPattern, seatsOf } from "./seating";
+import { rowPattern, seatLabel, seatsOf } from "./seating";
 
 function avatarFor(student: Student) {
   if (student.gender === "boy") return student.glasses ? boyGlassesAvatar : boyAvatar;
@@ -43,9 +44,33 @@ export function ClassMap({
   const rowsRef = useRef<HTMLDivElement>(null);
   const seatMap = new Map(seatsOf(klass).map((seat) => [seat.id, seat]));
   const studentById = new Map(klass.students.map((student) => [student.id, student]));
+  function renderSeat(seatId: string) {
+    if (!seatMap.has(seatId)) return <span key={seatId} className="seat-hidden" />;
+    const student = studentById.get(assignments[seatId] ?? "");
+    const avatar = student ? avatarFor(student) : "";
+    return (
+      <button
+        type="button"
+        key={seatId}
+        data-seat-id={seatId}
+        aria-label={`${student?.name ?? "空位"} · ${seatLabel(seatMap.get(seatId))}`}
+        className={`seat ${student ? "" : "empty"} ${markedSeats.includes(seatId) ? "zone-mark" : ""}`}
+        disabled={readOnly}
+        onClick={() => onSeat?.(seatId)}
+      >
+        {avatar && (
+          <span className="avatar student-avatar">
+            <img src={avatar} alt="" width={128} height={128} decoding="async" />
+          </span>
+        )}
+        <span className="seat-name">{student?.name ?? "空位"}</span>
+        {student && <span className="seat-points">{student.points ?? 0}</span>}
+      </button>
+    );
+  }
   return (
     <div
-      className="classroom classroom-public"
+      className={`classroom classroom-public ${klass.layout.podiumSeats?.length ? "classroom-with-podium" : ""}`}
       style={
         {
           "--seat-zoom": 1,
@@ -61,6 +86,7 @@ export function ClassMap({
         </div>
         <span className="door-label">门 · {klass.layout.doorSide === "right" ? "右" : "左"}</span>
       </div>
+      <PodiumSeats layout={klass.layout} renderSeat={renderSeat} />
       <div className="rows" ref={rowsRef}>
         <GroupRings rootRef={rowsRef} c={klass} assignments={assignments} />
         {Array.from({ length: klass.layout.rows }, (_, row) => (
@@ -72,26 +98,7 @@ export function ClassMap({
                   {Array.from({ length: capacity }, (_, side) => {
                     const seatId = `r${row}-d${desk}-s${side}`;
                     if (!seatMap.has(seatId)) return <span key={seatId} className="seat-hidden" />;
-                    const student = studentById.get(assignments[seatId] ?? "");
-                    const avatar = student ? avatarFor(student) : "";
-                    return (
-                      <button
-                        type="button"
-                        key={seatId}
-                        data-seat-id={seatId}
-                        className={`seat ${student ? "" : "empty"} ${markedSeats.includes(seatId) ? "zone-mark" : ""}`}
-                        disabled={readOnly}
-                        onClick={() => onSeat?.(seatId)}
-                      >
-                        {avatar && (
-                          <span className="avatar student-avatar">
-                            <img src={avatar} alt="" width={128} height={128} decoding="async" />
-                          </span>
-                        )}
-                        <span className="seat-name">{student?.name ?? "空位"}</span>
-                        {student && <span className="seat-points">{student.points ?? 0}</span>}
-                      </button>
-                    );
+                    return renderSeat(seatId);
                   })}
                 </div>
               ))}
