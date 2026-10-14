@@ -2931,7 +2931,22 @@ a {
 .account-popover button:hover { background: #f4f7fc; color: #245ad2; }
 .account-popover button.danger { color: #b84239; }
 .account-popover button.danger:hover { background: #fff1f0; color: #b84239; }
-.account-card { width: min(460px, 100%); }
+.account-card { width: min(520px, 100%); max-height: calc(100dvh - 40px); overflow-y: auto; }
+.account-classes { border-top: 1px solid #e6edf5; padding-top: 16px; min-width: 0; }
+.account-classes-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.account-classes h3 { margin: 0; font-size: 14px; }
+.account-classes-head > span { color: #7d8da3; font-size: 12px; }
+.account-class-list { display: grid; gap: 8px; }
+.account-class-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border: 1px solid #e6edf5; border-radius: 10px; }
+.account-class-row > div { min-width: 0; }
+.account-class-row strong { overflow-wrap: anywhere; font-size: 14px; }
+.account-class-row > button { flex: none; }
+.account-class-row p { margin: 5px 0 0; font-size: 11px; }
+.account-class-current { display: inline-block; margin-left: 6px; padding: 2px 5px; border-radius: 4px; color: #2256b0; background: #edf3ff; font-size: 10px; }
+.account-class-confirm { margin-top: 12px; padding: 14px; border: 1px solid #efc6c2; border-radius: 10px; background: #fff7f6; }
+.account-class-confirm p { margin: 8px 0; font-size: 12px; line-height: 1.7; }
+.account-class-confirm label { overflow-wrap: anywhere; }
+.account-class-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .account-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .account-dialog-head h2 { margin: 0; font-size: 20px; }
 .account-photo {

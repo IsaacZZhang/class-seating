@@ -237,6 +237,7 @@ export default function Root() {
   const [signedIn, setSignedIn] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [project, setProject] = useState<ProjectData | null>();
+  const [workspaceRevision, setWorkspaceRevision] = useState(0);
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
@@ -275,5 +276,8 @@ export default function Root() {
     );
   }
   if (!project?.classes.length) return <CreateClass onReady={setProject} />;
-  return <App initial={project} />;
+  return <App key={workspaceRevision} initial={project} onProjectReset={(next) => {
+    setProject(next);
+    setWorkspaceRevision((revision) => revision + 1);
+  }} />;
 }

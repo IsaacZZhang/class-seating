@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, LogOut, UserRound, X } from "lucide-react";
+import { ChevronDown, ChevronUp, LogOut, Trash2, UserRound, X } from "lucide-react";
+import { ClassData } from "./model";
 import { changePin, loadTeacherProfile, pinStatus, saveTeacherProfile, setPin, supabase, type TeacherProfile } from "./cloud";
 import { PinDialog } from "./meeting";
 
@@ -65,7 +66,13 @@ function loadImage(file: File) {
   });
 }
 
-export function AccountMenu({ placement = "sidebar" }: { placement?: "sidebar" | "bar" | "stage" }) {
+type ClassManagementProps = {
+  classes?: ClassData[];
+  activeClassId?: string;
+  onDeleteClass?: (classId: string) => Promise<void>;
+};
+
+export function AccountMenu({ placement = "sidebar", classes = [], activeClassId, onDeleteClass }: ClassManagementProps & { placement?: "sidebar" | "bar" | "stage" }) {
   const root = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -136,7 +143,7 @@ export function AccountMenu({ placement = "sidebar" }: { placement?: "sidebar" |
               setProfileOpen(true);
             }}
           >
-            <UserRound size={16} /> 个人信息
+            <UserRound size={16} /> 用户管理
           </button>
           <button type="button" role="menuitem" className="danger" onClick={() => void supabase.auth.signOut()}>
             <LogOut size={16} /> 退出登录
@@ -146,6 +153,9 @@ export function AccountMenu({ placement = "sidebar" }: { placement?: "sidebar" |
       {profileOpen && (
         <ProfileDialog
           profile={profile}
+          classes={classes}
+          activeClassId={activeClassId}
+          onDeleteClass={onDeleteClass}
           onClose={() => setProfileOpen(false)}
           onSaved={(next) => {
             setProfile(next);
@@ -161,11 +171,14 @@ function ProfileDialog({
   profile,
   onClose,
   onSaved,
+  classes = [],
+  activeClassId,
+  onDeleteClass,
 }: {
   profile: TeacherProfile;
   onClose: () => void;
   onSaved: (profile: TeacherProfile) => void;
-}) {
+} & ClassManagementProps) {
   const [name, setName] = useState(profile.displayName);
   const [avatar, setAvatar] = useState(profile.avatar);
   const [pinMode, setPinMode] = useState<"set" | "change" | "">("");
@@ -173,6 +186,13 @@ function ProfileDialog({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [classError, setClassError] = useState("");
+  const deletingRef = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const deleteTarget = classes.find((klass) => klass.id === deleteTargetId);
   const draft = { ...profile, displayName: name, avatar };
 
   const closeRef = useRef(onClose);
@@ -181,12 +201,45 @@ function ProfileDialog({
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.stopPropagation();
+      if (deletingRef.current) return;
       if (pinMode) setPinMode("");
+      else if (deleteTargetId) { setDeleteTargetId(""); setConfirmation(""); }
       else closeRef.current();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [pinMode]);
+  }, [pinMode, deleteTargetId]);
+
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const form = formRef.current;
+    form?.querySelector<HTMLButtonElement>("button")?.focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const controls = Array.from(form?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [tabindex="0"]') ?? []).filter((element) => element.getClientRects().length);
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    form?.addEventListener("keydown", trapFocus);
+    return () => { form?.removeEventListener("keydown", trapFocus); previous?.focus(); };
+  }, []);
+
+  async function removeClass() {
+    if (!deleteTarget || !onDeleteClass || confirmation.trim() !== deleteTarget.name || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
+    setClassError("");
+    try {
+      await onDeleteClass(deleteTarget.id);
+      onClose();
+    } catch (cause) {
+      setClassError(cause instanceof Error ? cause.message : "删除失败，请重试");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
+    }
+  }
 
   useEffect(() => {
     let stop = false;
@@ -215,6 +268,7 @@ function ProfileDialog({
 
   async function save(event: FormEvent) {
     event.preventDefault();
+    if (deletingRef.current || pending) return;
     const nextName = name.trim();
     if (nextName.length > 24) {
       setError("昵称最多 24 个字");
@@ -238,10 +292,10 @@ function ProfileDialog({
 
   return (
     <div className="pin-layer">
-      <form className="gate-card account-card" onSubmit={(event) => void save(event)}>
+      <form ref={formRef} className="gate-card account-card" role="dialog" aria-modal="true" aria-label="用户管理" onSubmit={(event) => void save(event)}>
         <div className="account-dialog-head">
-          <h2>个人信息</h2>
-          <button type="button" className="icon-button" aria-label="关闭" onClick={onClose}>
+          <h2>用户管理</h2>
+          <button type="button" className="icon-button" aria-label="关闭用户管理" disabled={deleting || pending} onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -311,9 +365,29 @@ function ProfileDialog({
         </div>
         {error && <p className="field-error">{error}</p>}
         {message && <p className="account-saved">{message}</p>}
-        <button className="button primary full" disabled={pending}>
-          {pending ? "保存中…" : "保存"}
+        <button className="button primary full" disabled={pending || deleting}>
+          {pending ? "保存中…" : "保存个人信息"}
         </button>
+        <section className="account-classes" aria-labelledby="managed-classes-title">
+          <div className="account-classes-head"><h3 id="managed-classes-title">我管理的班级</h3><span>{classes.length} 个班级</span></div>
+          {classes.length ? <div className="account-class-list">{classes.map((klass) => (
+            <div className="account-class-row" key={klass.id}>
+              <div><strong>{klass.name}</strong>{klass.id === activeClassId && <span className="account-class-current">当前班级</span>}<p>{klass.students.length} 名学生 · {klass.groups?.length ?? 0} 个小组 · {klass.versions.length} 条历史</p></div>
+              {onDeleteClass && <button type="button" className="button mini danger" aria-label={`删除班级${klass.name}`} disabled={deleting || pending} onClick={() => { setDeleteTargetId(klass.id); setConfirmation(""); setClassError(""); }}><Trash2 size={14} /> 删除</button>}
+            </div>
+          ))}</div> : <p className="muted">暂无班级，创建班级后会显示在这里。</p>}
+          {deleteTarget && <div className="account-class-confirm" role="group" aria-label={`确认删除${deleteTarget.name}`}>
+            <h3>删除“{deleteTarget.name}”？</h3>
+            <p>该班的学生、座位、排座规则、小组、积分及历史记录将永久删除，课堂展示链接也会失效。此操作无法撤销。</p>
+            {classes.length === 1 && <p>这是最后一个班级，删除后会回到创建班级页面。</p>}
+            <label>输入班级名称“{deleteTarget.name}”确认<input autoFocus autoComplete="off" value={confirmation} disabled={deleting} onChange={(event) => setConfirmation(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void removeClass(); } }} /></label>
+            {classError && <p className="field-error" role="alert">{classError}</p>}
+            <div className="account-class-confirm-actions">
+              <button type="button" className="button" disabled={deleting} onClick={() => { setDeleteTargetId(""); setConfirmation(""); setClassError(""); }}>取消</button>
+              <button type="button" className="button danger" disabled={deleting || pending || confirmation.trim() !== deleteTarget.name} onClick={() => void removeClass()}>{deleting ? "正在删除…" : "永久删除班级"}</button>
+            </div>
+          </div>}
+        </section>
       </form>
       {pinMode && (
         <PinDialog

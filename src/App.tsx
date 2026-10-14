@@ -36,6 +36,8 @@ import {
   ZoomOut,
 } from "lucide-react";
 import readXlsxFile from "read-excel-file";
+import { withoutClass } from "./class-management";
+import { deleteClass } from "./cloud";
 import {
   Adjustment,
   activeRules,
@@ -650,7 +652,7 @@ function ComparisonBoards({ left, right }: { left: ComparisonSnapshot; right: Co
   </div>;
 }
 
-export default function App({ initial }: { initial: ProjectData }) {
+export default function App({ initial, onProjectReset }: { initial: ProjectData; onProjectReset: (project: ProjectData) => void }) {
   const [project, setProject] = useState(initial);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(null);
   const projectRef = useRef(project);
@@ -662,6 +664,7 @@ export default function App({ initial }: { initial: ProjectData }) {
   const [saveOkay, setSaveOkay] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const syncPromiseRef = useRef<Promise<void> | null>(null);
+  const deletingClassRef = useRef(false);
   const pendingManageAction = useRef<(() => void) | null>(null);
   const [panel, setPanel] = useState<Panel>("none");
   const [view, setView] = useState<View>("classroom");
@@ -812,13 +815,14 @@ export default function App({ initial }: { initial: ProjectData }) {
     : Array.from({ length: publicClass.layout.rows }, (_, i) => i);
 
   async function syncSnapshot(snapshot: ProjectData) {
+    if (deletingClassRef.current) return;
     if (syncPromiseRef.current) await syncPromiseRef.current;
-    if (projectRef.current !== snapshot) return;
+    if (deletingClassRef.current || projectRef.current !== snapshot) return;
     const task = (async () => {
       setSyncing(true);
       try {
         const result = await pushProject(snapshot);
-        if (projectRef.current !== snapshot) return;
+        if (deletingClassRef.current || projectRef.current !== snapshot) return;
         setSaveOkay(result === true);
         if (result !== true) {
           setToast(result);
@@ -826,7 +830,7 @@ export default function App({ initial }: { initial: ProjectData }) {
         }
         try {
           const next = await pullProject();
-          if (projectRef.current !== snapshot) return;
+          if (deletingClassRef.current || projectRef.current !== snapshot) return;
           next.activeClassId = snapshot.activeClassId;
           dirty.current = false;
           applyingRemote.current = true;
@@ -848,6 +852,24 @@ export default function App({ initial }: { initial: ProjectData }) {
     await task;
     if (syncPromiseRef.current === task) syncPromiseRef.current = null;
   }
+  async function deleteManagedClass(classId: string) {
+    if (deletingClassRef.current) throw new Error("正在删除班级，请稍候");
+    if (!projectRef.current.classes.some((klass) => klass.id === classId)) throw new Error("班级不存在，请刷新后重试");
+    deletingClassRef.current = true;
+    try {
+      if (syncPromiseRef.current) await syncPromiseRef.current;
+      const snapshot = projectRef.current;
+      const saved = await pushProject(snapshot);
+      if (saved !== true) throw new Error(`班级数据尚未保存，请重试：${saved}`);
+      await deleteClass(classId);
+      dirty.current = false;
+      // Remount the workspace so undo, selection and queued saves cannot restore this class.
+      onProjectReset(withoutClass(snapshot, classId));
+    } catch (cause) {
+      deletingClassRef.current = false;
+      throw cause;
+    }
+  }
   useEffect(() => {
     if (applyingRemote.current) {
       applyingRemote.current = false;
@@ -862,10 +884,15 @@ export default function App({ initial }: { initial: ProjectData }) {
     const refresh = () => {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        if (dirty.current) return;
+        if (dirty.current || deletingClassRef.current) return;
         void pullProject()
           .then((next) => {
-            if (dirty.current) return;
+            if (dirty.current || deletingClassRef.current) return;
+            if (projectRef.current.classes.some((klass) => !next.classes.some((remote) => remote.id === klass.id))) {
+              deletingClassRef.current = true;
+              onProjectReset(next);
+              return;
+            }
             const active = projectRef.current.activeClassId;
             if (next.classes.some((item) => item.id === active)) next.activeClassId = active;
             applyingRemote.current = true;
@@ -1023,6 +1050,7 @@ export default function App({ initial }: { initial: ProjectData }) {
     });
   }
   function commit(update: (data: ProjectData, cl: ClassData) => void) {
+    if (deletingClassRef.current) return;
     dirty.current = true;
     const before = projectRef.current;
     const next = clone(before);
@@ -1040,6 +1068,7 @@ export default function App({ initial }: { initial: ProjectData }) {
     setUndoState(h);
   }
   function updateProject(update: (data: ProjectData) => void) {
+    if (deletingClassRef.current) return;
     dirty.current = true;
     const next = clone(projectRef.current);
     update(next);
@@ -1047,6 +1076,7 @@ export default function App({ initial }: { initial: ProjectData }) {
     setProject(next);
   }
   function undo() {
+    if (deletingClassRef.current) return;
     const h = historyRef.current;
     if (!h.past.length) return;
     const previous = h.past.at(-1)!;
@@ -1058,6 +1088,7 @@ export default function App({ initial }: { initial: ProjectData }) {
     setUndoState(next);
   }
   function redo() {
+    if (deletingClassRef.current) return;
     const h = historyRef.current;
     if (!h.future.length) return;
     const target = h.future[0];
@@ -1879,7 +1910,7 @@ export default function App({ initial }: { initial: ProjectData }) {
           >
             <Settings2 size={18} /> 编辑教室
           </button>
-          <AccountMenu />
+          <AccountMenu classes={project.classes} activeClassId={c.id} onDeleteClass={deleteManagedClass} />
         </div>
       </aside>
       <div className="main-shell">
@@ -1971,7 +2002,7 @@ export default function App({ initial }: { initial: ProjectData }) {
             <button className="button primary" onClick={() => void openManage()}>输入 PIN 管理</button>
           )}
           </div>
-          <AccountMenu placement="bar" />
+          <AccountMenu placement="bar" classes={project.classes} activeClassId={c.id} onDeleteClass={deleteManagedClass} />
         </header>
         <nav className="mobile-nav" aria-label="移动端导航">
           <button className={view === "classroom" && panel === "none" ? "active" : ""} onClick={() => { setView("classroom"); setPanel("none"); setLayoutMode(false); }}><LayoutGrid size={16} />座位</button>

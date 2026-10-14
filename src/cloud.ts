@@ -187,6 +187,19 @@ export async function pushProject(data: ProjectData): Promise<true | string> {
   return true;
 }
 
+export async function deleteClass(classId: string): Promise<void> {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData.user) throw new Error("请先登录后再删除班级");
+  const { data, error } = await supabase.from("classes")
+    .delete()
+    .eq("id", classId)
+    .eq("teacher_id", userData.user.id)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!data?.length) throw new Error("班级不存在或你没有删除权限，请刷新后重试");
+  if (localStorage.getItem(activeKey) === classId) localStorage.removeItem(activeKey);
+}
+
 export async function addPoints(studentId: string, delta: number, reason?: string) {
   const { data, error } = await supabase.rpc("add_points", {
     p_student_id: studentId,
