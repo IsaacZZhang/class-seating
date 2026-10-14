@@ -1935,6 +1935,7 @@ export default function App({ initial }: { initial: ProjectData }) {
               </button>
             )}
           </div>
+          <div className="topbar-tools" role="group" aria-label="班级操作">
           <button
             className="icon-button top-icon"
             title="撤销 Ctrl+Z"
@@ -1969,6 +1970,7 @@ export default function App({ initial }: { initial: ProjectData }) {
           ) : (
             <button className="button primary" onClick={() => void openManage()}>输入 PIN 管理</button>
           )}
+          </div>
           <AccountMenu placement="bar" />
         </header>
         <nav className="mobile-nav" aria-label="移动端导航">
