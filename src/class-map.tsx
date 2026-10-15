@@ -1,5 +1,7 @@
 import { useRef, type CSSProperties } from "react";
 import { PodiumSeats } from "./podium-seats";
+import { ClassroomBackdrop } from "./classroom-backdrop";
+import { viewIndices } from "./layout-view";
 import { GroupRings } from "./group-ring";
 import boyAvatar from "../ui/webp/boy.webp";
 import boyGlassesAvatar from "../ui/webp/boy-glasses.webp";
@@ -70,7 +72,7 @@ export function ClassMap({
   }
   return (
     <div
-      className={`classroom classroom-public ${klass.layout.podiumSeats?.length ? "classroom-with-podium" : ""}`}
+      className={`classroom classroom-public ${klass.layout.podiumPosition === "bottom" ? "classroom-bottom" : ""} ${klass.layout.podiumSeats?.length ? "classroom-with-podium" : ""}`}
       style={
         {
           "--seat-zoom": 1,
@@ -79,6 +81,7 @@ export function ClassMap({
         } as CSSProperties
       }
     >
+      {klass.layout.podiumPosition === "bottom" && <ClassroomBackdrop />}
       <div className="classroom-front">
         <span className="window-label">窗 · {klass.layout.windowSide === "left" ? "左" : "右"}</span>
         <div className="blackboard">
@@ -89,23 +92,27 @@ export function ClassMap({
       <PodiumSeats layout={klass.layout} renderSeat={renderSeat} />
       <div className="rows" ref={rowsRef}>
         <GroupRings rootRef={rowsRef} c={klass} assignments={assignments} />
-        {Array.from({ length: klass.layout.rows }, (_, row) => (
+        {viewIndices(klass.layout.rows, klass.layout.podiumPosition).map((row) => (
           <div className="seat-row" key={row}>
             <div className="row-label">第 {row + 1} 排</div>
-            <div className="desks" style={{ gridTemplateColumns: rowPattern(klass.layout, row).map((capacity) => `minmax(0,${capacity}fr)`).join(" ") }}>
-              {rowPattern(klass.layout, row).map((capacity, desk) => (
-                <div className="desk" key={desk} style={{ gridColumn: desk + 1, "--desk-seats": capacity } as CSSProperties}>
-                  {Array.from({ length: capacity }, (_, side) => {
-                    const seatId = `r${row}-d${desk}-s${side}`;
-                    if (!seatMap.has(seatId)) return <span key={seatId} className="seat-hidden" />;
-                    return renderSeat(seatId);
-                  })}
-                </div>
-              ))}
+            <div className="desks" style={{ gridTemplateColumns: viewIndices(rowPattern(klass.layout, row).length, klass.layout.podiumPosition).map((desk) => `minmax(0,${rowPattern(klass.layout, row)[desk]}fr)`).join(" ") }}>
+              {viewIndices(rowPattern(klass.layout, row).length, klass.layout.podiumPosition).map((desk, column) => {
+                const capacity = rowPattern(klass.layout, row)[desk];
+                return (
+                  <div className="desk" key={desk} style={{ gridColumn: column + 1, "--desk-seats": capacity } as CSSProperties}>
+                    {viewIndices(capacity, klass.layout.podiumPosition).map((side) => {
+                      const seatId = `r${row}-d${desk}-s${side}`;
+                      if (!seatMap.has(seatId)) return <span key={seatId} className="seat-hidden" />;
+                      return renderSeat(seatId);
+                    })}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}
       </div>
+      <div className="classroom-back">后排</div>
     </div>
   );
 }

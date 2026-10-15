@@ -46,6 +46,8 @@ export type Layout = {
   rowPatterns?: number[][];
   /** Manually assigned duty monitor seats beside the podium. */
   podiumSeats?: ("left" | "right")[];
+  /** Viewing direction only; seat IDs and physical seating rules stay unchanged. */
+  podiumPosition?: "top" | "bottom";
   disabled: string[];
   doorSide: "left" | "right";
   windowSide: "left" | "right";

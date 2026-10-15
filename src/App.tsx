@@ -38,6 +38,8 @@ import {
 import readXlsxFile from "read-excel-file";
 import { PrintPreview, PrintSeating } from "./print-seating";
 import { PodiumSeats } from "./podium-seats";
+import { ClassroomBackdrop } from "./classroom-backdrop";
+import { viewIndices } from "./layout-view";
 import { withoutClass } from "./class-management";
 import { deleteClass } from "./cloud";
 import {
@@ -555,7 +557,7 @@ function SeatBoard({
   return (
     <div
       ref={boardRef}
-      className={`classroom ${c.layout.podiumSeats?.length ? "classroom-with-podium" : ""} ${publicMode ? "classroom-public" : ""} ${readOnly ? "classroom-readonly" : ""} ${frozen ? "stage-locked" : ""} ${layoutMode ? "classroom-layout" : ""} ${focused ? "classroom-focus" : ""} ${marquee ? "marquee-active" : ""}`}
+      className={`classroom ${c.layout.podiumPosition === "bottom" ? "classroom-bottom" : ""} ${c.layout.podiumSeats?.length ? "classroom-with-podium" : ""} ${publicMode ? "classroom-public" : ""} ${readOnly ? "classroom-readonly" : ""} ${frozen ? "stage-locked" : ""} ${layoutMode ? "classroom-layout" : ""} ${focused ? "classroom-focus" : ""} ${marquee ? "marquee-active" : ""}`}
       style={{ "--seat-zoom": zoom, "--row-count": c.layout.rows, "--row-seat-ratio": 1.04 / c.layout.rows } as React.CSSProperties}
       onPointerDown={(event) => {
         if (!canMarquee || event.button !== 0) return;
@@ -580,6 +582,7 @@ function SeatBoard({
       onPointerUp={finishMarquee}
       onPointerCancel={finishMarquee}
     >
+      {c.layout.podiumPosition === "bottom" && <ClassroomBackdrop />}
       {marquee && marquee.w + marquee.h > 0 && (
         <div className="marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />
       )}
@@ -610,7 +613,7 @@ function SeatBoard({
           />
         )}
         {arrows.length > 0 && <svg className="trajectory-arrows" aria-hidden="true"><defs><marker id={arrowheadId} markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1 1 L9 5.5 L1 10" fill="none" stroke="#b85e1b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></marker></defs>{arrows.map((path, i) => <g key={i}><path className="trajectory-arrow-halo" d={path} /><path className="trajectory-arrow-line" d={path} markerEnd={`url(#${arrowheadId})`} /></g>)}</svg>}
-        {Array.from({ length: c.layout.rows }, (_, row) => (
+        {viewIndices(c.layout.rows, c.layout.podiumPosition).map((row) => (
           <div
             className={`seat-row ${doneRows.includes(row) ? "row-done" : ""}`}
             key={row}
@@ -619,14 +622,15 @@ function SeatBoard({
             <div
               className="desks"
               style={{
-                gridTemplateColumns: rowPattern(c.layout, row).map((capacity) => `minmax(0,${capacity}fr)`).join(" "),
+                gridTemplateColumns: viewIndices(rowPattern(c.layout, row).length, c.layout.podiumPosition).map((desk) => `minmax(0,${rowPattern(c.layout, row)[desk]}fr)`).join(" "),
               }}
             >
-              {rowPattern(c.layout, row).map((capacity, desk) => {
+              {viewIndices(rowPattern(c.layout, row).length, c.layout.podiumPosition).map((desk, column) => {
+                const capacity = rowPattern(c.layout, row)[desk];
                 const hasUsableSeat = Array.from({ length: capacity }, (_, side) => seatMap.has(`r${row}-d${desk}-s${side}`)).some(Boolean);
                 if (!layoutMode && !hasUsableSeat) return null;
-                return <div className="desk" key={desk} style={{ gridColumn: desk + 1, "--desk-seats": capacity } as React.CSSProperties}>
-                  {Array.from({ length: capacity }, (_, side) => side).map((side) => {
+                return <div className="desk" key={desk} style={{ gridColumn: column + 1, "--desk-seats": capacity } as React.CSSProperties}>
+                  {viewIndices(capacity, c.layout.podiumPosition).map((side) => {
                     const seatId = `r${row}-d${desk}-s${side}`;
                     return renderSeat(seatId);
                   })}
@@ -695,9 +699,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
   const [publicMode, setPublicMode] = useState(false);
   const [moveStep, setMoveStep] = useState(0);
   const [printMode, setPrintMode] = useState<"teacher" | "student">("student");
-  const [printPerspective, setPrintPerspective] = useState<
-    "teacher" | "student"
-  >("teacher");
+  const [printDirection, setPrintDirection] = useState<{ classId: string; position: Layout["podiumPosition"]; perspective: "teacher" | "student" }>();
   const [goal, setGoal] = useState<Goal>("steady");
   const [genderPreference, setGenderPreference] = useState<GenderPreference>("any");
   const [generateStep, setGenerateStep] = useState<GenerateStep>("goal");
@@ -738,6 +740,12 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
   const c =
     project.classes.find((item) => item.id === project.activeClassId) ??
     project.classes[0];
+  const printPerspective = printDirection?.classId === c.id && printDirection.position === c.layout.podiumPosition
+    ? printDirection.perspective
+    : c.layout.podiumPosition === "bottom" ? "student" : "teacher";
+  function setPrintPerspective(perspective: "teacher" | "student") {
+    setPrintDirection({ classId: c.id, position: c.layout.podiumPosition, perspective });
+  }
   const validSeatIds = new Set(seatsOf(c).map((seat) => seat.id));
   const isUnseated = (studentId: string) => !validSeatIds.has(studentSeat(c.assignments, studentId) ?? "");
   const pendingCount = c.students.filter((student) => isUnseated(student.id)).length;
@@ -803,7 +811,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
   const publicAssignment = c.published ?? c.assignments;
   const publicClass = {
     ...c,
-    layout: c.publishedLayout ?? c.layout,
+    layout: { ...(c.publishedLayout ?? c.layout), podiumPosition: c.layout.podiumPosition },
     students: c.publishedStudents ?? c.students,
   };
   const changedRows = Array.from(
@@ -1459,6 +1467,12 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
     if (removed.has(trajectoryStudent)) setTrajectoryStudent("");
     if (removed.has(ruleEditingStudent)) setRuleEditingStudent("");
     setToast(`已移除 ${studentIds.length} 名学生，可撤销。`);
+  }
+  function setPodiumPosition(position: "top" | "bottom") {
+    requireManage(() => {
+      setPrintDirection(undefined);
+      updateLayout({ ...c.layout, podiumPosition: position });
+    });
   }
   function updateLayout(layout: Layout) {
     const countBefore = Object.keys(c.assignments).length;
@@ -2152,7 +2166,11 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
                   <span className="view-pill">
                     <LayoutGrid size={15} /> 教室视图
                   </span>
-                  <span className="board-hint">从讲台看向学生</span>
+                  <label className="podium-position-control">
+                    <select aria-label="讲台位置" value={c.layout.podiumPosition ?? "top"} onChange={(event) => setPodiumPosition(event.target.value as "top" | "bottom")}>
+                      <option value="top">讲台在上</option><option value="bottom">讲台在下</option>
+                    </select>
+                  </label>
                 </div>
                 <div className="board-toolbar-right">
                   <button
@@ -2628,7 +2646,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
             <div className="page-heading"><div><span className="eyebrow">教室布局</span><h1>编辑教室</h1><p>只编辑座位结构。点击桌子可在单人、双人、三人之间切换，或一次为每排新增一组。</p></div><button className="button primary" onClick={() => { setView("classroom"); setLayoutMode(false); }}>完成编辑 <Check size={16} /></button></div>
             <div className="layout-editor-grid">
               <section className="layout-canvas"><div className="board-toolbar"><b>教室预览</b><span className={`layout-capacity ${seatsOf(c).length < c.students.length ? "short" : "enough"}`}>{seatsOf(c).length} 个可用座位 / {c.students.length} 名学生 · {seatsOf(c).length < c.students.length ? `还差 ${c.students.length - seatsOf(c).length} 座` : `座位足够${seatsOf(c).length > c.students.length ? `，余 ${seatsOf(c).length - c.students.length} 座` : ""}`}</span></div><SeatBoard c={c} assignments={{}} layoutMode onSeat={selectSeat} /><p className="muted">点击座位可停用或重新启用。移除的座位不会出现在排座画布中；已安排的学生会转为待安排，可撤销。</p></section>
-              <section className="layout-controls"><div className="layout-controls-head"><div className="layout-controls-title"><h2>逐排编辑</h2><button className="button outline" onClick={addRow} disabled={c.layout.rows >= 12}><Plus size={15} /> 加一排</button></div><div className="layout-bulk-actions"><span>批量添加到每排末尾</span><button className="button mini" onClick={() => addColumn(1)} disabled={Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length).some((length) => length >= 8)}><Plus size={14} /> 单人座列</button><button className="button mini" onClick={() => addColumn(2)} disabled={Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length).some((length) => length >= 8)}><Plus size={14} /> 双人桌列</button><button className="button mini" onClick={() => addColumn(3)} disabled={Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length).some((length) => length >= 8)}><Plus size={14} /> 三人桌列</button></div></div>
+              <section className="layout-controls"><label className="podium-position-control layout-position-control">讲台位置<select aria-label="讲台位置" value={c.layout.podiumPosition ?? "top"} onChange={(event) => setPodiumPosition(event.target.value as "top" | "bottom")}><option value="top">讲台在上</option><option value="bottom">讲台在下</option></select></label><div className="layout-controls-head"><div className="layout-controls-title"><h2>逐排编辑</h2><button className="button outline" onClick={addRow} disabled={c.layout.rows >= 12}><Plus size={15} /> 加一排</button></div><div className="layout-bulk-actions"><span>批量添加到每排末尾</span><button className="button mini" onClick={() => addColumn(1)} disabled={Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length).some((length) => length >= 8)}><Plus size={14} /> 单人座列</button><button className="button mini" onClick={() => addColumn(2)} disabled={Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length).some((length) => length >= 8)}><Plus size={14} /> 双人桌列</button><button className="button mini" onClick={() => addColumn(3)} disabled={Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length).some((length) => length >= 8)}><Plus size={14} /> 三人桌列</button></div></div>
                 {Array.from({ length: c.layout.rows }, (_, row) => <div className="layout-row-card" key={row}><div className="layout-row-head"><strong>第 {row + 1} 排</strong><span>{rowPattern(c.layout, row).reduce((sum, capacity) => sum + capacity, 0)} 个座位</span><button className="icon-button" title={`删除第 ${row + 1} 排`} onClick={() => removeRow(row)} disabled={c.layout.rows <= 1}><X size={15} /></button></div><div className="layout-desk-list">{rowPattern(c.layout, row).map((capacity, desk) => <button key={desk} className={`layout-desk-choice ${capacity === 1 ? "single" : ""} ${capacity === 3 ? "triple" : ""}`} title={`第 ${desk + 1} 组，点击在单人、双人、三人之间切换`} onClick={() => editRow(row, (pattern) => pattern.map((value, index) => index === desk ? value >= 3 ? 1 : value + 1 : value))}><span>{desk + 1}</span><b>{capacity === 1 ? "单人" : capacity === 3 ? "三人" : "双人"}</b></button>)}</div><div className="layout-row-actions"><button className="button mini" onClick={() => editRow(row, (pattern) => [...pattern, 2])} disabled={rowPattern(c.layout, row).length >= 8}><Plus size={14} /> 加双人桌</button><button className="button mini" onClick={() => editRow(row, (pattern) => [...pattern, 3])} disabled={rowPattern(c.layout, row).length >= 8}><Plus size={14} /> 加三人桌</button><button className="button mini" onClick={() => editRow(row, (pattern) => [...pattern, 1])} disabled={rowPattern(c.layout, row).length >= 8}><Plus size={14} /> 加单人桌</button><button className="button mini" onClick={() => editRow(row, (pattern) => pattern.slice(0, -1))} disabled={rowPattern(c.layout, row).length <= 1}>移除末桌</button></div></div>)}
                 <section className="layout-podium-controls"><h3>讲台两侧 · 值日</h3><p>左右各可添加一个单人座。直接指定学生，或回到座位页拖入；自动排座与轮换会保留值日的位置。</p>
                   {(["left", "right"] as const).map((side) => {
@@ -3446,7 +3464,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
                 <>
                   <p className="muted">A4 横向排版，可打印或保存为 PDF。预览使用当前座位草稿。</p>
                   <div className="print-settings">
-                    <div><span>方向</span><div className="segmented"><button aria-pressed={printPerspective === "teacher"} className={printPerspective === "teacher" ? "active" : ""} onClick={() => setPrintPerspective("teacher")}>教师视角</button><button aria-pressed={printPerspective === "student"} className={printPerspective === "student" ? "active" : ""} onClick={() => setPrintPerspective("student")}>学生视角</button></div></div>
+                    <div><span>方向</span><div className="segmented"><button aria-pressed={printPerspective === "teacher"} className={printPerspective === "teacher" ? "active" : ""} onClick={() => setPrintPerspective("teacher")}>讲台在上</button><button aria-pressed={printPerspective === "student"} className={printPerspective === "student" ? "active" : ""} onClick={() => setPrintPerspective("student")}>讲台在下</button></div></div>
                     <div><span>内容</span><div className="segmented"><button aria-pressed={printMode === "student"} className={printMode === "student" ? "active" : ""} onClick={() => setPrintMode("student")}>学生版</button><button aria-pressed={printMode === "teacher"} className={printMode === "teacher" ? "active" : ""} onClick={() => setPrintMode("teacher")}>教师版</button></div></div>
                   </div>
                   <PrintPreview klass={c} mode={printMode} perspective={printPerspective} round={draftRound} draft={hasDraftChanges} />

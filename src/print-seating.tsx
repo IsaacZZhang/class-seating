@@ -1,22 +1,24 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { ClassData } from "./model";
+import { viewIndices } from "./layout-view";
 import { activeRules, rowPattern, ruleText, seatsOf, sideText } from "./seating";
 
 type PrintProps = {
   klass: ClassData;
   mode: "student" | "teacher";
-  perspective: "student" | "teacher";
+  perspective?: "student" | "teacher";
   round: number;
   draft?: boolean;
 };
 
-export function PrintSeating({ klass, mode, perspective, round, draft, previewScale }: PrintProps & { previewScale?: number }) {
+export function PrintSeating({ klass, mode, perspective = klass.layout.podiumPosition === "bottom" ? "student" : "teacher", round, draft, previewScale }: PrintProps & { previewScale?: number }) {
   const teacherView = perspective === "teacher";
+  const position = teacherView ? "top" : "bottom";
   const students = new Map(klass.students.map((student) => [student.id, student]));
   const available = new Set(seatsOf(klass).map((seat) => seat.id));
   const rules = activeRules(klass);
   const withRules = new Set(rules.flatMap((rule) => [rule.studentId, ...(rule.targetId ? [rule.targetId] : [])]));
-  const rows = Array.from({ length: klass.layout.rows }, (_, index) => teacherView ? index : klass.layout.rows - 1 - index);
+  const rows = viewIndices(klass.layout.rows, position);
   const waiting = klass.students.filter((student) => !Object.entries(klass.assignments).some(([seatId, studentId]) => available.has(seatId) && studentId === student.id));
   function stage() {
     const sides = teacherView ? ["left", "right"] as const : ["right", "left"] as const;
@@ -37,9 +39,9 @@ export function PrintSeating({ klass, mode, perspective, round, draft, previewSc
     <div className="print-grid">
       {rows.map((row) => <div className="print-row" key={row}>
         <b className="print-row-label">{row + 1}<small>排</small></b>
-        <div className="print-desks" style={{ gridTemplateColumns: (teacherView ? rowPattern(klass.layout, row) : [...rowPattern(klass.layout, row)].reverse()).map((capacity) => `minmax(0, ${capacity}fr)`).join(" ") }}>
-          {Array.from({ length: rowPattern(klass.layout, row).length }, (_, index) => teacherView ? index : rowPattern(klass.layout, row).length - 1 - index).map((desk) => <div className="print-desk" key={desk}>
-            {Array.from({ length: rowPattern(klass.layout, row)[desk] }, (_, index) => teacherView ? index : rowPattern(klass.layout, row)[desk] - 1 - index).map((side) => {
+        <div className="print-desks" style={{ gridTemplateColumns: viewIndices(rowPattern(klass.layout, row).length, position).map((desk) => `minmax(0, ${rowPattern(klass.layout, row)[desk]}fr)`).join(" ") }}>
+          {viewIndices(rowPattern(klass.layout, row).length, position).map((desk) => <div className="print-desk" key={desk}>
+            {viewIndices(rowPattern(klass.layout, row)[desk], position).map((side) => {
               const seatId = `r${row}-d${desk}-s${side}`;
               const enabled = available.has(seatId);
               const student = enabled ? students.get(klass.assignments[seatId]) : undefined;
