@@ -36,6 +36,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import readXlsxFile from "read-excel-file";
+import { PrintPreview, PrintSeating } from "./print-seating";
 import { PodiumSeats } from "./podium-seats";
 import { withoutClass } from "./class-management";
 import { deleteClass } from "./cloud";
@@ -60,7 +61,6 @@ import {
   ruleText,
   seatLabel,
   seatsOf,
-  sideText,
   studentName,
   studentSeat,
 } from "./seating";
@@ -1475,13 +1475,13 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
     const seatId = `podium-${side}`;
     const occupant = c.assignments[seatId];
     if (!studentId) {
-      if (occupant && c.locks.includes(occupant)) { setToast("请先解锁这位学生，再更换值日班长。"); return; }
+      if (occupant && c.locks.includes(occupant)) { setToast("请先解锁这位学生，再更换值日。"); return; }
       commit((_, cl) => { delete cl.assignments[seatId]; });
       return;
     }
     if (occupant === studentId) return;
     const result = moveStudentToSeat(c, studentId, seatId);
-    if (!result.ok) { setToast(result.reason === "locked" ? "请先解锁学生，再更换值日班长。" : "请先清空这个特殊座位，再指定待安排学生。"); return; }
+    if (!result.ok) { setToast(result.reason === "locked" ? "请先解锁学生，再更换值日。" : "请先清空这个特殊座位，再指定待安排学生。"); return; }
     commit((_, cl) => { cl.assignments = result.assignments; });
     setToast(`已将${studentName(c, studentId)}安排到讲台${side === "left" ? "左" : "右"}侧。`);
   }
@@ -1702,7 +1702,11 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
   function openPrint(mode: "teacher" | "student") {
     setPrintMode(mode);
     setPanel("none");
-    setTimeout(() => window.print(), 100);
+    setTimeout(() => {
+      const previousTitle = document.title;
+      document.title = `${c.name}-第${draftRound}轮座位表`;
+      try { window.print(); } finally { document.title = previousTitle; }
+    }, 100);
   }
   function selectedHistory() {
     if (!current) return [];
@@ -1800,7 +1804,6 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
     </main>
   );
 
-  const printablePodiumSeats = seatsOf(c).filter((seat) => seat.podiumSide).sort((a, b) => printPerspective === "teacher" ? a.col - b.col : b.col - a.col);
   const stage = view === "classroom" && !layoutMode;
 
   if (publicMode)
@@ -1844,7 +1847,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
             <h3>
               {moveStep >= moveRows.length
                 ? "全班换座完成"
-                : moveRows[moveStep] === -1 ? "讲台两侧值日班长请移动" : `第 ${moveRows[moveStep] + 1} 排请移动`}
+                : moveRows[moveStep] === -1 ? "讲台两侧值日请移动" : `第 ${moveRows[moveStep] + 1} 排请移动`}
             </h3>
             <button
               className="button primary"
@@ -2627,12 +2630,12 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
               <section className="layout-canvas"><div className="board-toolbar"><b>教室预览</b><span className={`layout-capacity ${seatsOf(c).length < c.students.length ? "short" : "enough"}`}>{seatsOf(c).length} 个可用座位 / {c.students.length} 名学生 · {seatsOf(c).length < c.students.length ? `还差 ${c.students.length - seatsOf(c).length} 座` : `座位足够${seatsOf(c).length > c.students.length ? `，余 ${seatsOf(c).length - c.students.length} 座` : ""}`}</span></div><SeatBoard c={c} assignments={{}} layoutMode onSeat={selectSeat} /><p className="muted">点击座位可停用或重新启用。移除的座位不会出现在排座画布中；已安排的学生会转为待安排，可撤销。</p></section>
               <section className="layout-controls"><div className="layout-controls-head"><div className="layout-controls-title"><h2>逐排编辑</h2><button className="button outline" onClick={addRow} disabled={c.layout.rows >= 12}><Plus size={15} /> 加一排</button></div><div className="layout-bulk-actions"><span>批量添加到每排末尾</span><button className="button mini" onClick={() => addColumn(1)} disabled={Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length).some((length) => length >= 8)}><Plus size={14} /> 单人座列</button><button className="button mini" onClick={() => addColumn(2)} disabled={Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length).some((length) => length >= 8)}><Plus size={14} /> 双人桌列</button><button className="button mini" onClick={() => addColumn(3)} disabled={Array.from({ length: c.layout.rows }, (_, row) => rowPattern(c.layout, row).length).some((length) => length >= 8)}><Plus size={14} /> 三人桌列</button></div></div>
                 {Array.from({ length: c.layout.rows }, (_, row) => <div className="layout-row-card" key={row}><div className="layout-row-head"><strong>第 {row + 1} 排</strong><span>{rowPattern(c.layout, row).reduce((sum, capacity) => sum + capacity, 0)} 个座位</span><button className="icon-button" title={`删除第 ${row + 1} 排`} onClick={() => removeRow(row)} disabled={c.layout.rows <= 1}><X size={15} /></button></div><div className="layout-desk-list">{rowPattern(c.layout, row).map((capacity, desk) => <button key={desk} className={`layout-desk-choice ${capacity === 1 ? "single" : ""} ${capacity === 3 ? "triple" : ""}`} title={`第 ${desk + 1} 组，点击在单人、双人、三人之间切换`} onClick={() => editRow(row, (pattern) => pattern.map((value, index) => index === desk ? value >= 3 ? 1 : value + 1 : value))}><span>{desk + 1}</span><b>{capacity === 1 ? "单人" : capacity === 3 ? "三人" : "双人"}</b></button>)}</div><div className="layout-row-actions"><button className="button mini" onClick={() => editRow(row, (pattern) => [...pattern, 2])} disabled={rowPattern(c.layout, row).length >= 8}><Plus size={14} /> 加双人桌</button><button className="button mini" onClick={() => editRow(row, (pattern) => [...pattern, 3])} disabled={rowPattern(c.layout, row).length >= 8}><Plus size={14} /> 加三人桌</button><button className="button mini" onClick={() => editRow(row, (pattern) => [...pattern, 1])} disabled={rowPattern(c.layout, row).length >= 8}><Plus size={14} /> 加单人桌</button><button className="button mini" onClick={() => editRow(row, (pattern) => pattern.slice(0, -1))} disabled={rowPattern(c.layout, row).length <= 1}>移除末桌</button></div></div>)}
-                <section className="layout-podium-controls"><h3>讲台两侧 · 值日班长</h3><p>左右各可添加一个单人座。直接指定学生，或回到座位页拖入；自动排座与轮换会保留值日班长的位置。</p>
+                <section className="layout-podium-controls"><h3>讲台两侧 · 值日</h3><p>左右各可添加一个单人座。直接指定学生，或回到座位页拖入；自动排座与轮换会保留值日的位置。</p>
                   {(["left", "right"] as const).map((side) => {
                     const enabled = c.layout.podiumSeats?.includes(side) ?? false;
                     return <div className="layout-podium-choice" key={side}>
                       <label><input type="checkbox" checked={enabled} onChange={(event) => updateLayout({ ...c.layout, podiumSeats: event.target.checked ? [...(c.layout.podiumSeats ?? []), side] : (c.layout.podiumSeats ?? []).filter((item) => item !== side), disabled: c.layout.disabled.filter((seatId) => seatId !== `podium-${side}`) })} /> 添加讲台{side === "left" ? "左" : "右"}侧座位</label>
-                      {enabled && <label>值日班长<select aria-label={`讲台${side === "left" ? "左" : "右"}侧值日班长`} value={c.assignments[`podium-${side}`] ?? ""} onChange={(event) => setDutyStudent(side, event.target.value)}><option value="">暂不指定</option>{c.students.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}</select></label>}
+                      {enabled && <label>值日<select aria-label={`讲台${side === "left" ? "左" : "右"}侧值日`} value={c.assignments[`podium-${side}`] ?? ""} onChange={(event) => setDutyStudent(side, event.target.value)}><option value="">暂不指定</option>{c.students.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}</select></label>}
                     </div>;
                   })}
                 </section>
@@ -2705,7 +2708,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
           }}
         >
           <section
-            className={`drawer ${panel === "generate" ? "wide" : ""} ${previewingProposal ? "results" : ""}`}
+            className={`drawer ${panel === "generate" || panel === "print" ? "wide" : ""} ${previewingProposal ? "results" : ""}`}
             role="dialog"
             aria-modal="true"
             aria-label="操作弹窗"
@@ -3441,45 +3444,14 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
               )}
               {panel === "print" && (
                 <>
-                  <p className="muted">
-                    打印时会明确标出黑板方向。学生版只含姓名和座位。
-                  </p>
-                  <div className="segmented">
-                    <button
-                      className={printPerspective === "teacher" ? "active" : ""}
-                      onClick={() => setPrintPerspective("teacher")}
-                    >
-                      教师视角
-                    </button>
-                    <button
-                      className={printPerspective === "student" ? "active" : ""}
-                      onClick={() => setPrintPerspective("student")}
-                    >
-                      学生视角
-                    </button>
+                  <p className="muted">A4 横向排版，可打印或保存为 PDF。预览使用当前座位草稿。</p>
+                  <div className="print-settings">
+                    <div><span>方向</span><div className="segmented"><button aria-pressed={printPerspective === "teacher"} className={printPerspective === "teacher" ? "active" : ""} onClick={() => setPrintPerspective("teacher")}>教师视角</button><button aria-pressed={printPerspective === "student"} className={printPerspective === "student" ? "active" : ""} onClick={() => setPrintPerspective("student")}>学生视角</button></div></div>
+                    <div><span>内容</span><div className="segmented"><button aria-pressed={printMode === "student"} className={printMode === "student" ? "active" : ""} onClick={() => setPrintMode("student")}>学生版</button><button aria-pressed={printMode === "teacher"} className={printMode === "teacher" ? "active" : ""} onClick={() => setPrintMode("teacher")}>教师版</button></div></div>
                   </div>
-                  <button
-                    className="print-option"
-                    onClick={() => openPrint("student")}
-                  >
-                    <Users size={22} />
-                    <span>
-                      <strong>学生版</strong>
-                      <small>适合张贴、投影或分发</small>
-                    </span>
-                    <ChevronRight size={18} />
-                  </button>
-                  <button
-                    className="print-option"
-                    onClick={() => openPrint("teacher")}
-                  >
-                    <BookOpen size={22} />
-                    <span>
-                      <strong>教师版</strong>
-                      <small>包含规则提示和座位编号</small>
-                    </span>
-                    <ChevronRight size={18} />
-                  </button>
+                  <PrintPreview klass={c} mode={printMode} perspective={printPerspective} round={draftRound} draft={hasDraftChanges} />
+                  <button className="button primary full" onClick={() => openPrint(printMode)}><Printer size={17} /> 打印 / 保存为 PDF</button>
+                  <p className="print-help">默认 A4 横向。保存 PDF 时可关闭浏览器的页眉和页脚；教师版会附规则备注。</p>
                 </>
               )}
               {panel === "backup" && (
@@ -3511,70 +3483,7 @@ export default function App({ initial, onProjectReset }: { initial: ProjectData;
           </section>
         </div>
       )}
-      <div className={`print-sheet ${printMode}`}>
-        <h1>
-          {c.name} · 第{" "}
-          {!c.published || !hasDraftChanges ? c.round : c.round + 1} 轮座位表
-          {hasDraftChanges && c.published ? "（草稿）" : ""}
-        </h1>
-        {printPerspective === "teacher" && <p>黑板 / 讲台</p>}
-        {printPerspective === "teacher" && <div className="print-podium">{printablePodiumSeats.map((seat) => <span key={seat.id}><b>{seatLabel(seat)}</b><strong>{studentName(c, c.assignments[seat.id])}</strong></span>)}</div>}
-        {Array.from({ length: c.layout.rows }, (_, i) =>
-          printPerspective === "teacher" ? i : c.layout.rows - 1 - i,
-        ).map((row) => (
-          <div className="print-row" key={row}>
-            <b>第 {row + 1} 排</b>
-            {Array.from({ length: rowPattern(c.layout, row).length }, (_, i) =>
-              printPerspective === "teacher" ? i : rowPattern(c.layout, row).length - 1 - i,
-            ).map((desk) => (
-              <div className="print-desk" key={desk} style={{ flex: rowPattern(c.layout, row)[desk] }}>
-                {(printPerspective === "teacher" ? Array.from({ length: rowPattern(c.layout, row)[desk] }, (_, i) => i) : Array.from({ length: rowPattern(c.layout, row)[desk] }, (_, i) => rowPattern(c.layout, row)[desk] - 1 - i)).map(
-                  (side) => {
-                    const seatId = `r${row}-d${desk}-s${side}`;
-                    const sid = c.assignments[seatId];
-                    const student = c.students.find((s) => s.id === sid);
-                    return (
-                      <span key={side}>
-                        {student?.name ?? ""}
-                        {printMode === "teacher" && (
-                          <small>
-                            {desk + 1} 组 {sideText(rowPattern(c.layout, row)[desk], side)}
-                            {student &&
-                            activeRules(c).some(
-                              (r) =>
-                                r.studentId === student.id ||
-                                r.targetId === student.id,
-                            )
-                              ? " · 有规则"
-                              : ""}
-                          </small>
-                        )}
-                      </span>
-                    );
-                  },
-                )}
-              </div>
-            ))}
-          </div>
-        ))}
-        {printPerspective === "student" && <div className="print-podium">{printablePodiumSeats.map((seat) => <span key={seat.id}><b>{seatLabel(seat)}</b><strong>{studentName(c, c.assignments[seat.id])}</strong></span>)}</div>}
-        {printPerspective === "student" && <p>黑板 / 讲台</p>}
-        <footer>
-          {printPerspective === "teacher" ? "黑板方向 ↑" : "黑板方向 ↓"} ·{" "}
-          {new Date().toLocaleDateString("zh-CN")}
-        </footer>
-        {printMode === "teacher" && (
-          <div className="print-rule-notes">
-            <h3>教师规则提示</h3>
-            {activeRules(c).map((r) => (
-              <p key={r.id}>
-                {r.priority === "must" ? "必须" : "尽量"} · {ruleText(c, r)}
-                {r.note ? ` · ${r.note}` : ""}
-              </p>
-            ))}
-          </div>
-        )}
-      </div>
+      <PrintSeating klass={c} mode={printMode} perspective={printPerspective} round={draftRound} draft={hasDraftChanges} />
     </div>
   );
 }

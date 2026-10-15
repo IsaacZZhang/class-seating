@@ -6,17 +6,17 @@ import { migrateProject } from "./storage";
 function classroom() {
   const c = makeEmptyClass("特殊座位验证");
   c.layout = { ...c.layout, rows: 2, desks: 1, podiumSeats: ["left", "right"] };
-  c.students = [{ id: "monitor", name: "值日班长", groupId: "g" }, { id: "a", name: "甲", groupId: "g" }, { id: "b", name: "乙", groupId: "g" }];
+  c.students = [{ id: "monitor", name: "值日", groupId: "g" }, { id: "a", name: "甲", groupId: "g" }, { id: "b", name: "乙", groupId: "g" }];
   c.assignments = { "podium-left": "monitor", "r0-d0-s0": "a", "r0-d0-s1": "b" };
   c.groups = [{ id: "g", name: "一组", color: "#2861db", zone: ["r0-d0-s0", "r0-d0-s1"] }];
   return c;
 }
 
-describe("讲台值日班长特殊座位", () => {
+describe("讲台值日特殊座位", () => {
   it("keeps legacy layouts unchanged and adds one independent seat per enabled side", () => {
     const c = classroom();
     expect(seatsOf(c)).toHaveLength(6);
-    expect(seatLabel(seatsOf(c)[0])).toBe("讲台左侧 · 值日班长");
+    expect(seatLabel(seatsOf(c)[0])).toBe("讲台左侧 · 值日");
     c.layout.podiumSeats = ["right"];
     expect(seatsOf(c)).toHaveLength(5);
     delete c.layout.podiumSeats;

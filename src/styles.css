@@ -2017,72 +2017,14 @@ a {
     width: max-content;
   }
 }
+@page { size: A4 landscape; margin: 12mm; }
 @media print {
-  body {
-    background: #fff;
-  }
-  .app > .sidebar,
-  .app > .main-shell,
-  .panel-scrim,
-  .toast {
-    display: none !important;
-  }
-  .print-sheet {
-    display: block !important;
-    padding: 0 8mm;
-    color: #111;
-  }
-  .print-sheet h1 {
-    text-align: center;
-    font-size: 20pt;
-    margin: 0 0 5mm;
-  }
-  .print-sheet > p {
-    border: 2px solid #333;
-    text-align: center;
-    padding: 2mm;
-    margin-bottom: 8mm;
-  }
-  .print-row {
-    display: flex;
-    align-items: stretch;
-    gap: 4mm;
-    margin-bottom: 5mm;
-    page-break-inside: avoid;
-  }
-  .print-row > b {
-    width: 18mm;
-    display: grid;
-    place-items: center;
-    font-size: 10pt;
-  }
-  .print-desk {
-    display: flex;
-    flex: 1;
-    gap: 1mm;
-    border: 2px solid #a99d86;
-    padding: 1mm;
-  }
-  .print-desk span {
-    border: 1px solid #999;
-    flex: 1;
-    min-height: 17mm;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: 11pt;
-  }
-  .print-desk small {
-    font-size: 7pt;
-    color: #555;
-    margin-top: 2mm;
-  }
-  .print-sheet footer {
-    text-align: center;
-    margin-top: 8mm;
-    font-size: 9pt;
-  }
+  :root { background: #fff; }
+  html, body { background: #fff; min-width: 0; }
+  .app { display: block; min-height: 0; }
+  .app > .sidebar, .app > .main-shell, .panel-scrim, .toast { display: none !important; }
+  .print-sheet { display: block !important; width: 100%; padding: 0; color: #17212b; }
+  .print-preview { display: none !important; }
 }
 
 @media (min-width: 1001px) {
@@ -2692,11 +2634,11 @@ a {
 
 /* Use more of each row for the chairs and make the student label legible. */
 .classroom-front { flex-basis: 15%; }
-.classroom.classroom-with-podium .classroom-front { flex-basis: 25%; }
+.classroom.classroom-with-podium .classroom-front { flex-basis: 20%; }
 .podium-seats { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
-.podium-seat { position: absolute; top: 8%; width: clamp(40px, 11%, 64px); pointer-events: auto; text-align: center; }
-.podium-seat.left { left: 18%; }
-.podium-seat.right { right: 18%; }
+.podium-seat { position: absolute; bottom: 80%; transform: translateY(-4px); width: clamp(36px, 9%, 56px); pointer-events: auto; text-align: center; }
+.podium-seat.left { left: clamp(24%, calc(50% - 170px), 34%); }
+.podium-seat.right { right: clamp(24%, calc(50% - 170px), 34%); }
 .podium-seat-label { display: block; margin-bottom: 3px; padding: 2px 3px; border-radius: 5px; background: #fff8e3; color: #835915; font-size: clamp(7px, .8vw, 10px); font-weight: 700; white-space: nowrap; }
 .classroom .podium-seat .seat, .classroom .podium-seat .seat-hidden { width: 100%; }
 .classroom .podium-seat .seat-name { left: 6%; width: 88%; text-align: center; font-size: clamp(8px, 22cqw, 13px); }
@@ -2708,10 +2650,6 @@ a {
 .layout-podium-choice label { display: flex; align-items: center; gap: 7px; color: #53657b; font-size: 12px; }
 .layout-podium-choice input { width: 16px; height: 16px; }
 .layout-podium-choice select { padding: 6px; max-width: 180px; border: 1px solid #dce4ef; border-radius: 6px; background: #fff; }
-.print-podium { display: flex; justify-content: space-between; gap: 20px; margin: 12px 0; }
-.print-podium:empty { display: none; }
-.print-podium > span { display: grid; gap: 5px; padding: 9px 14px; border: 1px solid #666; }
-.print-podium b { font-size: 11px; }
 .classroom .rows { padding: 0 6% 1.5%; }
 .classroom .classroom-back { flex-basis: 5%; }
 .classroom .seat-row { grid-template-columns: 36px minmax(0, 1fr); }
@@ -3406,3 +3344,49 @@ a {
   .roster-row > .roster-tags:nth-of-type(2) { grid-column: 2; grid-row: 4; }
   .roster-row > .roster-tags:nth-of-type(3) { grid-column: 2; grid-row: 5; }
 }
+
+/* One paper layout shared by the on-screen preview and A4 landscape output. */
+.print-sheet { font-family: "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif; color: #24313c; font-size: 10pt; line-height: 1.35; }
+.print-title { display: flex; align-items: flex-end; justify-content: space-between; gap: 8mm; padding-bottom: 4mm; margin-bottom: 5mm; border-bottom: 1.5px solid #35434e; }
+.print-eyebrow { font-size: 8pt; letter-spacing: .15em; color: #65727c; }
+.print-title h1 { margin: 1mm 0 0; font-size: 21pt; font-weight: 750; letter-spacing: .02em; overflow-wrap: anywhere; }
+.print-meta { display: grid; gap: 1.5mm; flex: none; text-align: right; font-size: 8pt; color: #65727c; }
+.print-meta strong { font-size: 10pt; color: #35434e; }
+.print-front { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr); align-items: center; gap: 8mm; margin: 4mm 0; break-inside: avoid; }
+.print-blackboard { grid-column: 2; grid-row: 1; padding: 3mm; text-align: center; border-top: 2px solid #4a5863; border-bottom: 1px solid #9da8b1; font-size: 11pt; letter-spacing: .2em; }
+.print-duty { min-height: 11mm; display: grid; align-content: center; gap: 1mm; text-align: center; }
+.print-duty-0 { grid-column: 1; grid-row: 1; }
+.print-duty-1 { grid-column: 3; grid-row: 1; }
+.print-duty small { color: #65727c; font-size: 7.5pt; }
+.print-duty strong { font-size: 12pt; }
+.print-grid { display: grid; gap: 2mm; margin: 5mm 0; break-inside: avoid; }
+.print-row { display: grid; grid-template-columns: 9mm minmax(0, 1fr); gap: 3mm; align-items: stretch; break-inside: avoid; }
+.print-row-label { display: flex; align-items: center; justify-content: center; gap: 1mm; color: #65727c; font-size: 11pt; font-weight: 500; }
+.print-row-label small { font-size: 7pt; }
+.print-desks { display: grid; gap: 5mm; min-width: 0; }
+.print-desk { display: flex; min-width: 0; border: 1px solid #aeb8c1; border-radius: 1.5mm; overflow: hidden; }
+.print-seat { flex: 1; min-width: 0; min-height: var(--print-seat-height, 12mm); padding: 1mm; display: grid; align-content: center; justify-items: center; gap: .6mm; text-align: center; }
+.print-seat + .print-seat { border-left: 1px solid #d5dce1; }
+.print-seat strong { font-size: 12pt; font-weight: 600; overflow-wrap: anywhere; }
+.print-seat sup { font-size: 6pt; margin-left: .5mm; }
+.print-seat small { font-size: 6.5pt; color: #72808b; }
+.print-seat.vacant strong, .print-seat.unavailable strong { color: #b7c0c7; font-weight: 400; }
+.print-seat.unavailable { background: #f5f6f7; }
+.print-footer { display: flex; justify-content: space-between; gap: 5mm; margin-top: 5mm; padding-top: 3mm; border-top: 1px solid #d5dce1; font-size: 7.5pt; color: #65727c; break-inside: avoid; }
+.print-notes { margin-top: 6mm; padding-top: 3mm; border-top: 1px solid #d5dce1; font-size: 8pt; }
+.print-notes h2 { font-size: 10pt; margin: 0 0 2mm; }
+.print-notes p { margin: 1mm 0; break-inside: avoid; }
+.print-notes b { font-weight: 600; }
+.print-preview { padding: 12px; margin-top: 16px; max-height: 58dvh; overflow: auto; border: 1px solid #e1e6ed; border-radius: 10px; background: #e9edf2; }
+.print-preview .print-preview-sheet { display: block; width: 297mm; min-height: 210mm; padding: 12mm; background: #fff; box-shadow: 0 2px 9px #26384f18; }
+.print-settings { display: flex; flex-wrap: wrap; gap: 16px 24px; }
+.print-settings > div { display: grid; gap: 7px; }
+.print-settings > div > span { font-size: 11px; color: #718198; }
+.print-help { margin: 12px 0 0; color: #8190a1; font-size: 11px; line-height: 1.6; }
+
+.print-sheet.dense .print-title { margin-bottom: 3mm; padding-bottom: 3mm; }
+.print-sheet.dense .print-front { margin: 2mm 0; }
+.print-sheet.dense .print-grid { margin: 3mm 0; gap: 1mm; }
+.print-sheet.dense .print-seat { padding: .5mm; gap: .4mm; }
+.print-sheet.dense .print-seat strong { font-size: 10.5pt; line-height: 1.1; }
+.print-sheet.dense .print-seat small { line-height: 1; }

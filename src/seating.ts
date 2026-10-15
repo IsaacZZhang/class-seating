@@ -52,7 +52,7 @@ export function sideText(capacity: number | undefined, side: number) {
 }
 export const seatLabel = (seat?: Seat) =>
   seat
-    ? seat.podiumSide ? `讲台${seat.podiumSide === "left" ? "左" : "右"}侧 · 值日班长` : `第 ${seat.row + 1} 排 · 第 ${seat.desk + 1} 组${sideText(seat.capacity, seat.side)}`
+    ? seat.podiumSide ? `讲台${seat.podiumSide === "left" ? "左" : "右"}侧 · 值日` : `第 ${seat.row + 1} 排 · 第 ${seat.desk + 1} 组${sideText(seat.capacity, seat.side)}`
     : "未安排";
 export const studentName = (c: ClassData, studentId?: string) =>
   !studentId
@@ -282,7 +282,7 @@ export function explain(
       `${studentName(c, partner)}是同桌${before ? `，过去同桌过 ${before} 轮` : "，过去未同桌过"}`,
     );
   }
-  if (seat.podiumSide) context.push("值日班长特殊座位，自动排座会保留，教师可手动更换");
+  if (seat.podiumSide) context.push("值日特殊座位，自动排座会保留，教师可手动更换");
   if (c.locks.includes(studentId))
     context.push("你已锁定这个位置，自动排座会保留它");
   if (!must.length && !prefer.length) context.unshift("没有单独设置座位要求");

@@ -148,7 +148,7 @@ export function nextTurn(c: ClassData, assignments: Assignment = c.assignments):
 
 export function zoneError(c: ClassData, groupId: string, seatIds: string[]) {
   const members = seatingMembersByPoints(c, groupId);
-  if (seatIds.some((id) => seatsOf(c).find((seat) => seat.id === id)?.podiumSide)) return "值日班长座位不参与小组选区";
+  if (seatIds.some((id) => seatsOf(c).find((seat) => seat.id === id)?.podiumSide)) return "值日座位不参与小组选区";
   if (!members.length) return "这个小组还没有同学";
   if (seatIds.length !== members.length)
     return `请正好选择 ${members.length} 个连在一起的座位`;
@@ -174,7 +174,7 @@ export function moveFormation(
   const anchor = seats.get(studentSeat(c.assignments, anchorId) ?? "");
   const target = seats.get(targetSeatId);
   if (!anchor || !target) return { ok: false as const, reason: "请拖到可用座位" };
-  if (target.podiumSide || moverIds.some((studentId) => seats.get(studentSeat(c.assignments, studentId) ?? "")?.podiumSide)) return { ok: false as const, reason: "值日班长特殊座位需要单独移动" };
+  if (target.podiumSide || moverIds.some((studentId) => seats.get(studentSeat(c.assignments, studentId) ?? "")?.podiumSide)) return { ok: false as const, reason: "值日特殊座位需要单独移动" };
   const rowShift = target.row - anchor.row;
   const deskShift = target.desk - anchor.desk;
   const sideShift = target.side - anchor.side;

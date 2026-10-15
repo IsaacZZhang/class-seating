@@ -39,7 +39,7 @@ export function MeetingScreen({
 
   function chooseSeat(seatId: string) {
     setMessage("");
-    if (seatsOf(klass).find((seat) => seat.id === seatId)?.podiumSide) { setMessage("值日班长由教师在教室编辑中指定，不参与小组选座。"); return; }
+    if (seatsOf(klass).find((seat) => seat.id === seatId)?.podiumSide) { setMessage("值日由教师在教室编辑中指定，不参与小组选座。"); return; }
     if (manualGroup && activeGroup) {
       const next = draft.includes(seatId) ? draft.filter((item) => item !== seatId) : [...draft, seatId];
       setDraft(next);
