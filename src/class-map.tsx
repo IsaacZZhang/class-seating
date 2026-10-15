@@ -1,6 +1,5 @@
 import { useRef, type CSSProperties } from "react";
 import { PodiumSeats } from "./podium-seats";
-import { ClassroomBackdrop } from "./classroom-backdrop";
 import { viewIndices } from "./layout-view";
 import { GroupRings } from "./group-ring";
 import boyAvatar from "../ui/webp/boy.webp";
@@ -81,7 +80,6 @@ export function ClassMap({
         } as CSSProperties
       }
     >
-      {klass.layout.podiumPosition === "bottom" && <ClassroomBackdrop />}
       <div className="classroom-front">
         <span className="window-label">窗 · {klass.layout.windowSide === "left" ? "左" : "右"}</span>
         <div className="blackboard">

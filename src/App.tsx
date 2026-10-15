@@ -38,7 +38,6 @@ import {
 import readXlsxFile from "read-excel-file";
 import { PrintPreview, PrintSeating } from "./print-seating";
 import { PodiumSeats } from "./podium-seats";
-import { ClassroomBackdrop } from "./classroom-backdrop";
 import { viewIndices } from "./layout-view";
 import { withoutClass } from "./class-management";
 import { deleteClass } from "./cloud";
@@ -582,7 +581,6 @@ function SeatBoard({
       onPointerUp={finishMarquee}
       onPointerCancel={finishMarquee}
     >
-      {c.layout.podiumPosition === "bottom" && <ClassroomBackdrop />}
       {marquee && marquee.w + marquee.h > 0 && (
         <div className="marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />
       )}
